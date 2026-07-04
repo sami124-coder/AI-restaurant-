@@ -1,6 +1,6 @@
-# AI Restaurant Manager ChatGPT
+# Restaurant Decision AI
 
-A conversational restaurant operations dashboard. Owners can ask about sales, profit, menu performance, inventory, staffing, and reports; the assistant uses restaurant-scoped tools and never invents business figures.
+The AI decision layer for restaurant owners. Ask for a daily summary, find menu profit leaks, and catch inventory risks in seconds. The assistant uses restaurant-scoped tools, never invents business figures, and requires owner approval before operational changes.
 
 ## Quick start
 
