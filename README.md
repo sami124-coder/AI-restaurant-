@@ -39,7 +39,7 @@ Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to 
 
 ## Deploy publicly
 
-The repository includes a Render Blueprint that builds the React frontend, serves it from Express, provisions persistent SQLite storage, and creates a generated JWT secret.
+The repository includes a Render Blueprint that builds the React frontend, serves it from Express, and creates a generated JWT secret. The free demo uses ephemeral SQLite storage, so data can reset when Render restarts the service. Upgrade to a persistent disk or PostgreSQL before storing real restaurant data.
 
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
 

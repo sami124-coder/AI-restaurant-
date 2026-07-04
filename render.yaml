@@ -12,12 +12,8 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_PATH
-        value: /var/data/restaurant.db
+        value: ./data/restaurant.db
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.4-mini
-    disk:
-      name: restaurant-data
-      mountPath: /var/data
-      sizeGB: 1
