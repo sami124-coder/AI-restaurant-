@@ -37,3 +37,10 @@ The app works in deterministic demo mode without an API key. Add `OPENAI_API_KEY
 
 Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. Demo credentials and seed behavior should be removed before accepting real customers.
 
+## Deploy publicly
+
+The repository includes a Render Blueprint that builds the React frontend, serves it from Express, provisions persistent SQLite storage, and creates a generated JWT secret.
+
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
+
+During setup, optionally enter `OPENAI_API_KEY`. Without it, the public demo uses the safe deterministic manager mode.

@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ai-restaurant-manager
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /var/data/restaurant.db
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
+    disk:
+      name: restaurant-data
+      mountPath: /var/data
+      sizeGB: 1

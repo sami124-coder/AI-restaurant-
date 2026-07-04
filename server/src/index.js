@@ -5,6 +5,8 @@ import helmet from "helmet";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { db } from "./db.js";
 import { getAssistantReply } from "./ai.js";
 import { executeTool } from "./tools.js";
@@ -50,6 +52,14 @@ app.post("/api/chat", auth, async (req, res, next) => {
     res.json({ sessionId, message: { role: "assistant", content: reply } });
   } catch (error) { next(error); }
 });
+if (process.env.NODE_ENV === "production") {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const webDist = path.resolve(currentDir, "../../web/dist");
+  app.use(express.static(webDist));
+  app.get("/{*path}", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(webDist, "index.html"));
+  });
+}
 app.use((error, _req, res, _next) => { console.error(error); res.status(error.name === "ZodError" ? 400 : 500).json({ error: error.name === "ZodError" ? "Invalid request" : "Unable to complete request" }); });
 app.listen(process.env.PORT || 4000, () => console.log(`API listening on http://localhost:${process.env.PORT || 4000}`));
-
