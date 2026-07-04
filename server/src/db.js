@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY, session_id INT
 CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL, type TEXT NOT NULL, date_range TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS refunds (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), order_id INTEGER, amount REAL NOT NULL, reason TEXT, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS staff_shifts (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), employee_name TEXT NOT NULL, role TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, hourly_rate REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS answer_feedback (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), session_id INTEGER NOT NULL REFERENCES chat_sessions(id), message_id INTEGER NOT NULL REFERENCES chat_messages(id), question TEXT NOT NULL, original_answer TEXT NOT NULL, rating TEXT NOT NULL CHECK(rating IN ('approved','needs_correction')), corrected_answer TEXT, correct_tools TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(restaurant_id,message_id));
 `);
 
 function seed() {

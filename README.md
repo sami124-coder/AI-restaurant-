@@ -49,6 +49,21 @@ Use **Connect real data** inside the app to upload CSV exports. Column names:
 
 Dates should be ISO-compatible, for example `2026-07-04T19:00:00Z`. Menu and inventory imports update matching names; orders, refunds, and shifts append new records.
 
+## Expert answer collection
+
+After each assistant response, the owner can approve it or provide a corrected manager answer. The system stores the original question, tool trace, original response, and approved correction per restaurant.
+
+`GET /api/training/export` returns training-ready JSON:
+
+```json
+{
+  "question": "هل أحتاج موظفين إضافيين الليلة؟",
+  "correct_tools": ["get_daily_sales", "suggest_staffing"],
+  "approved_answer": "الطلبات المتوقعة أعلى من المعتاد...",
+  "source": "owner_corrected"
+}
+```
+
 ## Production notes
 
 Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. Demo credentials and seed behavior should be removed before accepting real customers.

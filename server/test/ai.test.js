@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demoReply, SYSTEM_PROMPT } from "../src/ai.js";
+import { demoReply, inferTools, SYSTEM_PROMPT } from "../src/ai.js";
 import { db } from "../src/db.js";
 
 const restaurantId = db.prepare("SELECT id FROM restaurants ORDER BY id LIMIT 1").get().id;
@@ -75,4 +75,13 @@ test("Arabic ambiguous question asks for clarification", () => {
   const reply = demoReply("حلل هذا", restaurantId);
   assert.match(reply, /القرار غير واضح/);
   assert.doesNotMatch(reply, /\$\d/);
+});
+
+test("tool traces identify staffing analysis in Arabic and English", () => {
+  assert.deepEqual(inferTools("Do we need more staff tonight?"), ["get_daily_sales", "suggest_staffing"]);
+  assert.deepEqual(inferTools("هل أحتاج موظفين إضافيين الليلة؟"), ["get_daily_sales", "suggest_staffing"]);
+});
+
+test("broad questions trace all supporting decision tools", () => {
+  assert.deepEqual(inferTools("What needs my attention?"), ["get_daily_sales", "get_low_performance_items", "get_inventory_status"]);
 });

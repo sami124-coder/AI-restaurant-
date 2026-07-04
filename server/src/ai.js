@@ -136,10 +136,25 @@ export function demoReply(text, restaurantId) {
   return formatStaffing(data);
 }
 
+export function inferTools(text) {
+  const q = text.toLowerCase();
+  if (/(attention|priority|انتباه|الأولوية|المشاكل)/.test(q)) return ["get_daily_sales", "get_low_performance_items", "get_inventory_status"];
+  if (/(inventory|stock|restock|ingredient|مخزون|ناقص|ينفد|مكونات)/.test(q)) return ["get_inventory_status"];
+  if (/(worst|weak|losing|margin|dish|menu|أسوأ|أضعف|هامش|طبق|الأطباق)/.test(q)) return ["get_low_performance_items"];
+  if (/(profit|revenue|cost|week|month|ربح|أرباح|إيراد|تكلفة|أسبوع|شهر)/.test(q)) return ["get_profit_summary"];
+  if (/(staff|server|cook|shift|tonight|موظف|موظفين|نادل|طباخ|وردية|الليلة)/.test(q)) return ["get_daily_sales", "suggest_staffing"];
+  if (/(today|sales|orders|performance|summary|اليوم|المبيعات|الطلبات|الأداء|ملخص)/.test(q)) return ["get_daily_sales"];
+  return [];
+}
+
 export async function getAssistantReply(messages, restaurantId) {
-  if (!process.env.OPENAI_API_KEY) return demoReply(messages.at(-1).content, restaurantId);
+  if (!process.env.OPENAI_API_KEY) {
+    const question = messages.at(-1).content;
+    return { content: demoReply(question, restaurantId), toolsUsed: inferTools(question) };
+  }
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let input = messages.map(({ role, content }) => ({ role, content }));
+  const toolsUsed = [];
   const lastUser = [...messages].reverse().find((message) => message.role === "user")?.content.trim().toLowerCase() || "";
   const previousAssistant = [...messages].reverse().find((message) => message.role === "assistant")?.content.toLowerCase() || "";
   const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead|نعم|أوافق|موافق|نفذ|نفّذ)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change|تأكيد|إيقاف|تفعيل|تغيير)/.test(previousAssistant);
@@ -147,9 +162,10 @@ export async function getAssistantReply(messages, restaurantId) {
   for (let turn = 0; turn < 6; turn++) {
     const response = await client.responses.create({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", instructions: SYSTEM_PROMPT, input, tools: toolDefinitions });
     const calls = response.output.filter((x) => x.type === "function_call");
-    if (!calls.length) return response.output_text || "I need more information to answer that.";
+    if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };
     input = [...input, ...response.output];
     for (const call of calls) {
+      toolsUsed.push(call.name);
       let output;
       const actionKey = `${call.name}:${call.arguments}`;
       if (mutatingTools.has(call.name) && (!ownerConfirmed || blockedThisRequest.has(actionKey))) {
@@ -161,5 +177,5 @@ export async function getAssistantReply(messages, restaurantId) {
       input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
     }
   }
-  return "I could not complete that analysis safely. Please narrow the request.";
+  return { content: "I could not complete that analysis safely. Please narrow the request.", toolsUsed: [...new Set(toolsUsed)] };
 }
