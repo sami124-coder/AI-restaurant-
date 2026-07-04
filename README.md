@@ -44,3 +44,14 @@ The repository includes a Render Blueprint that builds the React frontend, serve
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
 
 During setup, optionally enter `OPENAI_API_KEY`. Without it, the public demo uses the safe deterministic manager mode.
+
+### Railway alternative
+
+The included `Dockerfile` and `railway.json` also support deployment on Railway:
+
+1. Create a Railway project and choose **Deploy from GitHub repo**.
+2. Select `sami124-coder/AI-restaurant-`.
+3. Add `JWT_SECRET` and optionally `OPENAI_API_KEY`.
+4. Generate a public domain from the service networking settings.
+
+For durable SQLite data, mount a Railway volume at `/data`. Without a volume, the seeded demo still works but changes can reset during redeployment.
