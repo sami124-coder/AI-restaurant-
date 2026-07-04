@@ -30,3 +30,29 @@ test("system prompt requires confirmation for data-changing tools", () => {
   assert.match(SYSTEM_PROMPT, /explicitly confirms/i);
 });
 
+test("ambiguous questions trigger clarification instead of invented analysis", () => {
+  const reply = demoReply("Can you analyze this?", restaurantId);
+  assert.match(reply, /not sure which decision/i);
+  assert.doesNotMatch(reply, /\$\d/);
+});
+
+test("broad attention question combines multiple operational risks", () => {
+  const reply = demoReply("What needs my attention?", restaurantId);
+  assert.match(reply, /Inventory:/);
+  assert.match(reply, /Menu profit:/);
+  assert.match(reply, /Today:/);
+  assert.match(reply, /Priority:/);
+});
+
+test("weak dish question returns margin evidence and a focused action", () => {
+  const reply = demoReply("Which dish is hurting my profit?", restaurantId);
+  assert.match(reply, /Menu profit risks/);
+  assert.match(reply, /margin/);
+  assert.match(reply, /Recommendation:/);
+});
+
+test("help explains the supported decision areas", () => {
+  const reply = demoReply("What can you do?", restaurantId);
+  assert.match(reply, /Summarize today/);
+  assert.match(reply, /Suggest staffing/);
+});
