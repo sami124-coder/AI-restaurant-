@@ -11,6 +11,8 @@ Decision process:
 5. Ask one short clarifying question when the timeframe, item, or requested action is ambiguous.
 
 Response style:
+- Reply in the same language as the owner. If they write Arabic, use clear professional Modern Standard Arabic with natural restaurant terminology.
+- Preserve menu and inventory item names exactly as stored, even when the rest of the answer is Arabic.
 - Use plain business language, short sections, and at most five key figures.
 - Explain why a number matters; do not merely repeat tool output.
 - Distinguish facts from recommendations.
@@ -26,6 +28,7 @@ Safety rules:
 
 const money = (value) => `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const mutatingTools = new Set(["flag_menu_item", "create_report"]);
+const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 
 function formatDaily(data) {
   if (!data.orders) return `There are no recorded orders for ${data.date}.\n\nRecommendation: Import or enter sales data before making an operating decision.`;
@@ -64,7 +67,52 @@ function formatAttention(restaurantId) {
   return `What needs attention\n\n1. Inventory: ${inventory.low_stock_count} item${inventory.low_stock_count === 1 ? "" : "s"} below threshold${inventory.low_stock_count ? ` — ${inventory.items.filter((item) => item.status === "low").map((item) => item.item_name).join(", ")}` : ""}.\n2. Menu profit: ${topRisk ? `${topRisk.name} has the weakest margin at ${topRisk.margin_percent}%` : "No item is currently below the performance threshold"}.\n3. Today: ${money(daily.revenue)} sales from ${daily.orders} orders, with ${money(daily.profit)} estimated profit.\n\nPriority: ${inventory.low_stock_count ? "Reorder low-stock ingredients before the next service." : topRisk ? `Review the cost and price of ${topRisk.name}.` : "No urgent exception is visible; protect today’s service quality."}`;
 }
 
+function demoReplyArabic(text, restaurantId) {
+  const q = text.trim();
+  if (/(مرحبا|مرحباً|السلام عليكم|اهلا|أهلا)/.test(q)) return "مرحباً، أنا جاهز. اسألني عن مبيعات اليوم، أرباح الأسبوع، أداء الأطباق، المخزون، أو احتياج الموظفين.";
+  if (/(شكرا|شكراً|ممتاز)/.test(q)) return "على الرحب والسعة. ما القرار الذي تريد تحليله الآن؟";
+  if (/(ماذا تستطيع|ماذا يمكنك|ساعدني|مساعدة)/.test(q)) return "أستطيع مساعدتك في خمسة قرارات:\n\n• تلخيص مبيعات وأرباح اليوم\n• تحديد أفضل وأضعف الأطباق\n• كشف نقص المخزون\n• اقتراح عدد الموظفين حسب الطلب\n• إنشاء تقرير تشغيلي بعد موافقتك\n\nجرّب: «ما الذي يحتاج إلى انتباهي اليوم؟»";
+  if (/(انتباه|الأولوية|الاولويه|المشاكل|مشكلة|مهم اليوم)/.test(q) && !/(مخزون|ناقص|ينفد|مكونات)/.test(q)) {
+    const daily = executeTool("get_daily_sales", { date: new Date().toISOString().slice(0, 10) }, restaurantId);
+    const inventory = executeTool("get_inventory_status", {}, restaurantId);
+    const weak = executeTool("get_low_performance_items", {}, restaurantId);
+    const risk = weak[0];
+    const lowNames = inventory.items.filter((item) => item.status === "low").map((item) => item.item_name).join("، ");
+    return `ما يحتاج إلى انتباهك\n\n1. المخزون: ${inventory.low_stock_count} عناصر تحت حد إعادة الطلب${lowNames ? ` — ${lowNames}` : ""}.\n2. ربحية القائمة: ${risk ? `${risk.name} لديه أضعف هامش ربح بنسبة ${risk.margin_percent}%` : "لا يوجد طبق تحت حد الأداء حالياً"}.\n3. اليوم: المبيعات ${money(daily.revenue)} من ${daily.orders} طلباً، والربح التقديري ${money(daily.profit)}.\n\nالأولوية: ${inventory.low_stock_count ? "أعد طلب المكونات الناقصة قبل الخدمة القادمة." : risk ? `راجع تكلفة وسعر ${risk.name}.` : "لا توجد مشكلة عاجلة؛ ركّز على جودة الخدمة."}`;
+  }
+  if (/(مخزون|ناقص|ينفد|مكونات|إعادة الطلب)/.test(q)) {
+    const data = executeTool("get_inventory_status", {}, restaurantId);
+    const low = data.items.filter((item) => item.status === "low");
+    if (!low.length) return "المخزون بحالة جيدة، ولا يوجد أي عنصر تحت حد إعادة الطلب.\n\nالتوصية: استمر على وتيرة التوريد الحالية وراجع المخزون قبل فترة الذروة.";
+    return `تنبيهات المخزون\n\n${low.map((item) => `• ${item.item_name}: المتبقي ${item.quantity} (حد إعادة الطلب ${item.threshold})`).join("\n")}\n\nالتوصية: أعد طلب ${low.map((item) => item.item_name).join(" و")} قبل الخدمة القادمة.`;
+  }
+  if (/(أسوأ|اضعف|أضعف|يخسر|خسارة|هامش منخفض|يضر.*الربح)/.test(q)) {
+    const items = executeTool("get_low_performance_items", {}, restaurantId);
+    if (!items.length) return "لا يوجد طبق تحت حد الأداء حالياً.\n\nالتوصية: واصل مراجعة هامش المساهمة والمبيعات أسبوعياً.";
+    return `مخاطر ربحية القائمة\n\n${items.slice(0, 4).map((item, index) => `${index + 1}. ${item.name}: هامش ${item.margin_percent}%، بيع ${item.units}، مساهمة ${money(item.profit)}`).join("\n")}\n\nالتوصية: راجع ${items[0].name} أولاً، وتحقق من تكلفة الحصة والسعر قبل التفكير في إيقافه.`;
+  }
+  if (/(أفضل|افضل|الأكثر مبيع|طبق|الأطباق)/.test(q)) {
+    const items = executeTool("get_top_dishes", {}, restaurantId);
+    return `أفضل الأطباق هذا الشهر\n\n${items.map((item, index) => `${index + 1}. ${item.name}: بيع ${item.units}، إيراد ${money(item.revenue)}، هامش ${item.margin_percent}%`).join("\n")}\n\nالتوصية: حافظ على ظهور الأطباق الرائدة وقارن هوامشها قبل تقديم أي خصم.`;
+  }
+  if (/(ربح|أرباح|هامش|إيراد|تكلفة|أسبوع|شهر)/.test(q)) {
+    const range = q.includes("شهر") ? "month" : q.includes("اليوم") ? "today" : "week";
+    const data = executeTool("get_profit_summary", { range }, restaurantId);
+    return `ملخص الربح\n\nالإيرادات: ${money(data.revenue)}\nالتكاليف: ${money(data.cost)}\nالربح: ${money(data.profit)}\nهامش الربح: ${data.margin_percent}%\nالطلبات: ${data.orders}\n\nالتوصية: ابدأ بمراجعة الأطباق منخفضة الهامش لأن تحسين السعر أو تكلفة المكونات سيؤثر سريعاً في الربح.`;
+  }
+  if (/(موظف|موظفين|عمال|نادل|طباخ|وردية|ازدحام|الليلة)/.test(q)) {
+    const data = executeTool("suggest_staffing", { level: q.includes("ازدحام") ? "busy" : "auto", date_time: new Date().toISOString() }, restaurantId);
+    return `توقع الاحتياج للموظفين\n\nالطلبات المتوقعة: ${data.expected_orders}\nالقرار: ${data.expected_orders >= 40 ? "أضف نادلاً وطباخ خط إضافياً خلال الذروة." : data.expected_orders >= 25 ? "أضف نادلاً مرناً خلال ساعة الذروة." : "عدد الموظفين المعتاد كافٍ."}\n\nالتوصية: أكّد توفر الفريق مع مسؤول الوردية قبل تعديل الجدول.`;
+  }
+  if (/(اليوم|المبيعات|الطلبات|الأداء|ملخص|كيف.*المطعم)/.test(q)) {
+    const data = executeTool("get_daily_sales", { date: new Date().toISOString().slice(0, 10) }, restaurantId);
+    return `أداء اليوم\n\nالمبيعات: ${money(data.revenue)}\nالطلبات: ${data.orders}\nالربح: ${money(data.profit)}\nهامش الربح: ${data.margin_percent}%\nساعة الذروة: ${data.peak_hour || "غير متوفرة"}\n\nالتوصية: حافظ على جودة الخدمة خلال الذروة وراجع عناصر المخزون المنخفض قبل الوردية القادمة.`;
+  }
+  return "أريد أن أجيبك اعتماداً على بيانات المطعم، لكن القرار غير واضح. هل تريد تحليل أداء اليوم، ربحية القائمة، المخزون، أم احتياج الموظفين؟";
+}
+
 export function demoReply(text, restaurantId) {
+  if (isArabic(text)) return demoReplyArabic(text, restaurantId);
   const q = text.toLowerCase().trim();
   if (/^(hi|hello|hey|good (morning|afternoon|evening))[!. ]*$/.test(q)) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
@@ -94,7 +142,7 @@ export async function getAssistantReply(messages, restaurantId) {
   let input = messages.map(({ role, content }) => ({ role, content }));
   const lastUser = [...messages].reverse().find((message) => message.role === "user")?.content.trim().toLowerCase() || "";
   const previousAssistant = [...messages].reverse().find((message) => message.role === "assistant")?.content.toLowerCase() || "";
-  const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change)/.test(previousAssistant);
+  const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead|نعم|أوافق|موافق|نفذ|نفّذ)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change|تأكيد|إيقاف|تفعيل|تغيير)/.test(previousAssistant);
   const blockedThisRequest = new Set();
   for (let turn = 0; turn < 6; turn++) {
     const response = await client.responses.create({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", instructions: SYSTEM_PROMPT, input, tools: toolDefinitions });

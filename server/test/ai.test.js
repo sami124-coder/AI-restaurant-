@@ -56,3 +56,23 @@ test("help explains the supported decision areas", () => {
   assert.match(reply, /Summarize today/);
   assert.match(reply, /Suggest staffing/);
 });
+
+test("Arabic sales question receives an Arabic data-backed answer", () => {
+  const reply = demoReply("كيف أداء المطعم اليوم؟", restaurantId);
+  assert.match(reply, /أداء اليوم/);
+  assert.match(reply, /المبيعات:/);
+  assert.match(reply, /التوصية:/);
+});
+
+test("Arabic profit question returns real figures in Arabic", () => {
+  const reply = demoReply("كم أرباح هذا الأسبوع؟", restaurantId);
+  assert.match(reply, /ملخص الربح/);
+  assert.match(reply, /الإيرادات:/);
+  assert.match(reply, /\$/);
+});
+
+test("Arabic ambiguous question asks for clarification", () => {
+  const reply = demoReply("حلل هذا", restaurantId);
+  assert.match(reply, /القرار غير واضح/);
+  assert.doesNotMatch(reply, /\$\d/);
+});
