@@ -10,11 +10,12 @@ import { fileURLToPath } from "node:url";
 import { db } from "./db.js";
 import { getAssistantReply } from "./ai.js";
 import { executeTool } from "./tools.js";
+import { dataConnectionStatus, importRestaurantData } from "./dataImport.js";
 
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "3mb" }));
 const secret = process.env.JWT_SECRET || "development-only-secret";
 
 function auth(req, res, next) {
@@ -32,6 +33,16 @@ app.post("/api/auth/login", (req, res) => {
 });
 app.get("/api/dashboard", auth, (req, res) => {
   res.json({ sales: executeTool("get_daily_sales", {}, req.user.restaurantId), inventory: executeTool("get_inventory_status", {}, req.user.restaurantId), topDishes: executeTool("get_top_dishes", {}, req.user.restaurantId).slice(0, 3) });
+});
+app.get("/api/data/status", auth, (req, res) => res.json(dataConnectionStatus(req.user.restaurantId)));
+app.post("/api/data/import", auth, (req, res, next) => {
+  try {
+    const parsed = z.object({
+      type: z.enum(["orders", "refunds", "menu_items", "inventory", "staff_shifts"]),
+      csv: z.string().min(1).max(2_500_000)
+    }).parse(req.body);
+    res.status(201).json(importRestaurantData(parsed.type, parsed.csv, req.user.restaurantId));
+  } catch (error) { next(error); }
 });
 app.get("/api/chat/sessions", auth, (req, res) => res.json(db.prepare("SELECT * FROM chat_sessions WHERE restaurant_id=? ORDER BY created_at DESC").all(req.user.restaurantId)));
 app.get("/api/chat/sessions/:id/messages", auth, (req, res) => {

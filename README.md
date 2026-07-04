@@ -31,7 +31,23 @@ The app works in deterministic demo mode without an API key. Add `OPENAI_API_KEY
 - `GET /api/chat/sessions`
 - `GET /api/chat/sessions/:id/messages`
 - `POST /api/chat`
+- `GET /api/data/status`
+- `POST /api/data/import`
 - `GET /api/health`
+
+## Real restaurant data imports
+
+Use **Connect real data** inside the app to upload CSV exports. Column names:
+
+| Data type | Required columns | Optional columns |
+| --- | --- | --- |
+| Orders | `created_at,total_price,cost` | `items` (JSON), or `item_name,quantity` |
+| Refunds | `amount,created_at` | `order_id,reason` |
+| Menu | `name,price,cost` | `active` |
+| Inventory | `item_name,quantity,threshold` | — |
+| Staff shifts | `employee_name,role,start_at,end_at,hourly_rate` | — |
+
+Dates should be ISO-compatible, for example `2026-07-04T19:00:00Z`. Menu and inventory imports update matching names; orders, refunds, and shifts append new records.
 
 ## Production notes
 

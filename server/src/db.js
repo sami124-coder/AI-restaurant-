@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, restaurant_id INTEGER
 CREATE TABLE IF NOT EXISTS chat_sessions (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), title TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES chat_sessions(id), role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL, type TEXT NOT NULL, date_range TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS refunds (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), order_id INTEGER, amount REAL NOT NULL, reason TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS staff_shifts (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), employee_name TEXT NOT NULL, role TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, hourly_rate REAL NOT NULL);
 `);
 
 function seed() {
@@ -44,4 +46,3 @@ function seed() {
   }
 }
 seed();
-
