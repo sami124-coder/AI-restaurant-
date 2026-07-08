@@ -11,6 +11,7 @@ import { db } from "./db.js";
 import { getAssistantReply } from "./ai.js";
 import { executeTool } from "./tools.js";
 import { dataConnectionStatus, importRestaurantData } from "./dataImport.js";
+import { importKnowledgeDocument, knowledgeStatus, searchKnowledgeBase } from "./knowledge.js";
 
 const app = express();
 app.use(helmet());
@@ -43,6 +44,22 @@ app.post("/api/data/import", auth, (req, res, next) => {
     }).parse(req.body);
     res.status(201).json(importRestaurantData(parsed.type, parsed.csv, req.user.restaurantId));
   } catch (error) { next(error); }
+});
+app.get("/api/knowledge/status", auth, (req, res) => res.json(knowledgeStatus(req.user.restaurantId)));
+app.post("/api/knowledge/import", auth, (req, res, next) => {
+  try {
+    const parsed = z.object({
+      title: z.string().trim().min(1).max(200),
+      source: z.string().trim().max(500).optional(),
+      content: z.string().trim().min(1).max(2_500_000)
+    }).parse(req.body);
+    res.status(201).json(importKnowledgeDocument(parsed, req.user.restaurantId));
+  } catch (error) { next(error); }
+});
+app.get("/api/knowledge/search", auth, (req, res) => {
+  const query = String(req.query.q || "").trim();
+  if (!query) return res.status(400).json({ error: "Search query is required." });
+  res.json(searchKnowledgeBase(query, req.user.restaurantId));
 });
 app.get("/api/chat/sessions", auth, (req, res) => res.json(db.prepare("SELECT * FROM chat_sessions WHERE restaurant_id=? ORDER BY created_at DESC").all(req.user.restaurantId)));
 app.get("/api/chat/sessions/:id/messages", auth, (req, res) => {

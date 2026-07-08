@@ -33,3 +33,11 @@ test("staffing produces a concrete recommendation", () => {
   const result = executeTool("suggest_staffing", { level: "busy", date_time: new Date().toISOString() }, restaurantId);
   assert.match(result.recommendation, /Schedule|Add|sufficient/);
 });
+
+test("refund summary returns structured anomaly evidence", () => {
+  const result = executeTool("get_refund_summary", { range: "week" }, restaurantId);
+  assert.equal(result.range, "week");
+  assert.equal(typeof result.refunds, "number");
+  assert.equal(typeof result.refunded_amount, "number");
+  assert.ok(Array.isArray(result.top_reasons));
+});

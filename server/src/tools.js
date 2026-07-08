@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { searchKnowledgeBase } from "./knowledge.js";
 
 const isoDay = (value = new Date()) => new Date(value).toISOString().slice(0, 10);
 const rangeFor = (range = "week") => {
@@ -14,6 +15,8 @@ export const toolDefinitions = [
   ["get_top_dishes", "Get best-selling dishes by revenue", {}],
   ["get_low_performance_items", "Find low-margin or low-selling menu items", {}],
   ["get_inventory_status", "Get stock levels and low-stock alerts", {}],
+  ["get_refund_summary", "Get refund count, value, and common reasons for a range", { range: { type: "string", enum: ["today", "week", "month"] } }],
+  ["search_knowledge_base", "Search uploaded restaurant books and SOPs for relevant guidance", { query: { type: "string" } }],
   ["create_report", "Create and save an operations report", { type: { type: "string" }, date_range: { type: "string", enum: ["today", "week", "month"] } }],
   ["suggest_staffing", "Suggest staffing from order demand", { level: { type: "string", enum: ["normal", "busy", "auto"] }, date_time: { type: "string" } }],
   ["flag_menu_item", "Activate or deactivate a menu item", { item_id: { type: "integer" }, action: { type: "string", enum: ["activate", "deactivate"] } }]
@@ -50,6 +53,15 @@ export function executeTool(name, args, restaurantId) {
     const items = db.prepare("SELECT id,item_name,quantity,threshold FROM inventory WHERE restaurant_id=? ORDER BY quantity<=threshold DESC,item_name").all(restaurantId);
     return { items: items.map((x) => ({ ...x, status: x.quantity <= x.threshold ? "low" : "ok" })), low_stock_count: items.filter((x) => x.quantity <= x.threshold).length };
   }
+  if (name === "get_refund_summary") {
+    const [start, end] = rangeFor(args.range);
+    const rows = db.prepare("SELECT amount,reason FROM refunds WHERE restaurant_id=? AND created_at BETWEEN ? AND ?").all(restaurantId, start, end);
+    const reasons = rows.reduce((result, row) => { const reason = row.reason || "Unspecified"; result[reason] = (result[reason] || 0) + 1; return result; }, {});
+    return { range: args.range, refunds: rows.length, refunded_amount: +rows.reduce((sum, row) => sum + row.amount, 0).toFixed(2), top_reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, count]) => ({ reason, count })) };
+  }
+  if (name === "search_knowledge_base") {
+    return { query: args.query, results: searchKnowledgeBase(args.query, restaurantId) };
+  }
   if (name === "suggest_staffing") {
     const date = (args.date_time || new Date().toISOString()).slice(0, 10);
     const sales = executeTool("get_daily_sales", { date }, restaurantId);
@@ -69,4 +81,3 @@ export function executeTool(name, args, restaurantId) {
   }
   throw new Error(`Unknown tool: ${name}`);
 }
-

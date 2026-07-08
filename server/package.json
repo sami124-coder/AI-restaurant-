@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test && npm run eval",
+    "eval": "node evals/run-evals.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
@@ -18,4 +19,3 @@
     "zod": "^4.1.5"
   }
 }
-

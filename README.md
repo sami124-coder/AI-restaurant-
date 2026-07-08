@@ -64,6 +64,32 @@ After each assistant response, the owner can approve it or provide a corrected m
 }
 ```
 
+## Evaluation dataset
+
+`server/evals/dataset.js` contains 64 reviewed Arabic and English scenarios covering busy/quiet days, menu profitability, low inventory, missing data, refund anomalies, staffing decisions, broad manager questions, and actions requiring confirmation.
+
+Run it after every prompt, model, or tool change:
+
+```bash
+npm run eval -w server
+```
+
+The normal server test command also runs the evaluation suite.
+
+## Book and SOP knowledge base
+
+Use `POST /api/knowledge/import` to add extracted text from restaurant books, SOPs, recipes, or training manuals:
+
+```json
+{
+  "title": "Service Training Manual",
+  "source": "Owner upload",
+  "content": "Full extracted book text..."
+}
+```
+
+The AI can then call `search_knowledge_base(query)` before answering questions about book content. This is retrieval-based grounding, not blind memorization; it keeps answers tied to the uploaded material.
+
 ## Production notes
 
 Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. Demo credentials and seed behavior should be removed before accepting real customers.

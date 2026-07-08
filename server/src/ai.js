@@ -6,6 +6,7 @@ export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert general-
 Decision process:
 1. Identify the owner's actual decision, timeframe, and constraints.
 2. Use every relevant read-only tool before discussing restaurant-specific numbers.
+2a. For questions about policies, recipes, SOPs, training manuals, service standards, or book knowledge, search the uploaded knowledge base first.
 3. Compare revenue, cost, margin, demand, and operational risk when the tools provide them.
 4. Lead with the answer, explain the evidence, then give one prioritized next action.
 5. Ask one short clarifying question when the timeframe, item, or requested action is ambiguous.
@@ -54,6 +55,11 @@ function formatStaffing(data) {
   return `Staffing outlook\n\nExpected orders: ${data.expected_orders}\nDecision: ${data.recommendation}\nBasis: ${data.basis}.\n\nRecommendation: Confirm availability with the shift lead before changing the rota.`;
 }
 
+function formatRefunds(data) {
+  if (!data.refunds) return `No refunds are recorded for this ${data.range}.\n\nRecommendation: Verify that POS refund imports are current.`;
+  return `Refund review\n\nRefunds: ${data.refunds}\nRefunded value: ${money(data.refunded_amount)}\nTop reasons: ${data.top_reasons.map((item) => `${item.reason} (${item.count})`).join(", ") || "Not specified"}\n\nRecommendation: Investigate the most common reason first and compare it with the affected menu items or shifts.`;
+}
+
 function formatLowPerformance(items) {
   if (!items.length) return "No menu item currently meets the low-performance threshold.\n\nRecommendation: Keep monitoring contribution margin and unit sales each week.";
   return `Menu profit risks\n\n${items.slice(0, 4).map((item, index) => `${index + 1}. ${item.name}: ${item.margin_percent}% margin, ${item.units} sold, ${money(item.profit)} contribution`).join("\n")}\n\nRecommendation: Review ${items[0].name} first. Check its portion cost and price before considering removal.`;
@@ -69,6 +75,13 @@ function formatAttention(restaurantId) {
 
 function demoReplyArabic(text, restaurantId) {
   const q = text.trim();
+  if (/(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)|أنشئ.*تقرير/.test(q)) return "هذا الإجراء سيغيّر بيانات المطعم. يرجى تأكيد الإجراء المحدد بوضوح قبل التنفيذ.";
+  if (/(استرداد|مرتجع|مرتجعات|إرجاع)/.test(q)) {
+    const range = q.includes("شهر") ? "month" : q.includes("اليوم") ? "today" : "week";
+    const data = executeTool("get_refund_summary", { range }, restaurantId);
+    if (!data.refunds) return "لا توجد عمليات استرداد مسجلة لهذه الفترة.\n\nالتوصية: تأكد من تحديث بيانات الاسترداد المستوردة من نظام نقاط البيع.";
+    return `مراجعة الاستردادات\n\nعدد العمليات: ${data.refunds}\nالقيمة المستردة: ${money(data.refunded_amount)}\nأهم الأسباب: ${data.top_reasons.map((item) => `${item.reason} (${item.count})`).join("، ") || "غير محدد"}\n\nالتوصية: ابدأ بالتحقيق في السبب الأكثر تكراراً وقارنه بالأطباق أو الورديات المتأثرة.`;
+  }
   if (/(مرحبا|مرحباً|السلام عليكم|اهلا|أهلا)/.test(q)) return "مرحباً، أنا جاهز. اسألني عن مبيعات اليوم، أرباح الأسبوع، أداء الأطباق، المخزون، أو احتياج الموظفين.";
   if (/(شكرا|شكراً|ممتاز)/.test(q)) return "على الرحب والسعة. ما القرار الذي تريد تحليله الآن؟";
   if (/(ماذا تستطيع|ماذا يمكنك|ساعدني|مساعدة)/.test(q)) return "أستطيع مساعدتك في خمسة قرارات:\n\n• تلخيص مبيعات وأرباح اليوم\n• تحديد أفضل وأضعف الأطباق\n• كشف نقص المخزون\n• اقتراح عدد الموظفين حسب الطلب\n• إنشاء تقرير تشغيلي بعد موافقتك\n\nجرّب: «ما الذي يحتاج إلى انتباهي اليوم؟»";
@@ -114,6 +127,9 @@ function demoReplyArabic(text, restaurantId) {
 export function demoReply(text, restaurantId) {
   if (isArabic(text)) return demoReplyArabic(text, restaurantId);
   const q = text.toLowerCase().trim();
+  if (/(customer satisfaction|food waste|restaurant next door|weather|competitor)/.test(q)) return "I do not have the required data to answer that reliably. Connect the relevant customer, waste, competitor, or weather data first.";
+  if (/(deactivate|disable|delete|activate).*(dish|item)|create.*report/.test(q)) return "This action changes restaurant data. Please confirm the exact action before I execute it.";
+  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard)/.test(q)) return "I can answer from uploaded books and SOPs once they are imported into the knowledge base. Please upload the book text first, then ask this again.";
   if (/^(hi|hello|hey|good (morning|afternoon|evening))[!. ]*$/.test(q)) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
   }
@@ -121,7 +137,8 @@ export function demoReply(text, restaurantId) {
   if (/(what can you do|help|capabilities)/.test(q)) return "I can help with five decisions:\n\n• Summarize today’s sales and profit\n• Find top and weak menu items\n• Flag low inventory\n• Suggest staffing from demand\n• Create an operating report after your confirmation\n\nTry: “What needs my attention today?”";
   if (/(what needs|attention|priority|priorities|worry|problem)/.test(q) && !/(inventory|stock|restock|ingredient|run out)/.test(q)) return formatAttention(restaurantId);
   let name = "get_daily_sales", args = { date: new Date().toISOString().slice(0, 10) };
-  if (/(inventory|stock|restock|ingredient|run out)/.test(q)) { name = "get_inventory_status"; args = {}; }
+  if (/(refund|refunded|return|chargeback)/.test(q)) { name = "get_refund_summary"; args = { range: q.includes("month") ? "month" : q.includes("today") ? "today" : "week" }; }
+  else if (/(inventory|stock|restock|ingredient|run out)/.test(q)) { name = "get_inventory_status"; args = {}; }
   else if (/(worst|weak|losing|low.?margin|hurt.*profit|underperform)/.test(q)) { name = "get_low_performance_items"; args = {}; }
   else if (/(top|best|popular|selling|dish|menu item)/.test(q)) { name = "get_top_dishes"; args = {}; }
   else if (/(profit|margin|revenue|cost|week|month)/.test(q)) { name = "get_profit_summary"; args = { range: q.includes("month") ? "month" : q.includes("today") ? "today" : "week" }; }
@@ -131,6 +148,7 @@ export function demoReply(text, restaurantId) {
   if (name === "get_daily_sales") return formatDaily(data);
   if (name === "get_profit_summary") return formatProfit(data);
   if (name === "get_inventory_status") return formatInventory(data);
+  if (name === "get_refund_summary") return formatRefunds(data);
   if (name === "get_top_dishes") return formatTopDishes(data);
   if (name === "get_low_performance_items") return formatLowPerformance(data);
   return formatStaffing(data);
@@ -138,8 +156,13 @@ export function demoReply(text, restaurantId) {
 
 export function inferTools(text) {
   const q = text.toLowerCase();
-  if (/(attention|priority|انتباه|الأولوية|المشاكل)/.test(q)) return ["get_daily_sales", "get_low_performance_items", "get_inventory_status"];
-  if (/(inventory|stock|restock|ingredient|مخزون|ناقص|ينفد|مكونات)/.test(q)) return ["get_inventory_status"];
+  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار)/.test(q)) return ["search_knowledge_base"];
+  if (/(customer satisfaction|food waste|restaurant next door|weather|competitor|رضا العملاء|هدر الطعام|المطعم المجاور|الطقس)/.test(q)) return [];
+  if (/(deactivate|disable|delete|activate).*(dish|item)|(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)/.test(q)) return ["flag_menu_item"];
+  if (/create.*report|أنشئ.*تقرير/.test(q)) return ["create_report"];
+  if (/(refund|refunded|return|chargeback|استرداد|مرتجع|إرجاع)/.test(q)) return ["get_refund_summary"];
+  if (/(attention|priority|operational risk|manager brief|انتباه|الأولوية|المشاكل|خطر تشغيلي|موجز المدير)/.test(q)) return ["get_daily_sales", "get_low_performance_items", "get_inventory_status"];
+  if (/(inventory|stock|restock|ingredient|run .*out|مخزون|ناقص|ينفد|مكونات)/.test(q)) return ["get_inventory_status"];
   if (/(worst|weak|losing|margin|dish|menu|أسوأ|أضعف|هامش|طبق|الأطباق)/.test(q)) return ["get_low_performance_items"];
   if (/(profit|revenue|cost|week|month|ربح|أرباح|إيراد|تكلفة|أسبوع|شهر)/.test(q)) return ["get_profit_summary"];
   if (/(staff|server|cook|shift|tonight|موظف|موظفين|نادل|طباخ|وردية|الليلة)/.test(q)) return ["get_daily_sales", "suggest_staffing"];
