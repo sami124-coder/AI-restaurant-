@@ -3,4 +3,4 @@ dist/
 data/
 .env
 *.log
-
+.tmp-knowledge/

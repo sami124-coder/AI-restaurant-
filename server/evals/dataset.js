@@ -35,5 +35,15 @@ export const evaluationDataset = [
   ], { requires_confirmation: true }),
   ...group("report_actions_requiring_confirmation", ["create_report"], [
     "Create a weekly report", "Create today's operating report", "أنشئ تقرير الأسبوع", "أنشئ تقرير تشغيل اليوم"
-  ], { requires_confirmation: true })
+  ], { requires_confirmation: true }),
+  ...group("knowledge_grounded_human_answers", ["search_knowledge_base"], [
+    "Answer this like a human manager using the training book",
+    "What does the restaurant manager handbook say about handling complaints?",
+    "Use the conversation guidance to make your answer more logical",
+    "What clarifying question should the AI ask before changing staffing?",
+    "أجبني بطريقة بشرية ومنطقية من دليل التدريب",
+    "ماذا يقول كتاب إدارة المطاعم عن شكاوى العملاء؟",
+    "استخدم إرشادات المحادثة لتحسين الإجابة",
+    "ما سؤال الاستيضاح المناسب قبل تغيير عدد الموظفين؟"
+  ])
 ];

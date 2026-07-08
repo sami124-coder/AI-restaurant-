@@ -6,7 +6,7 @@ export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert general-
 Decision process:
 1. Identify the owner's actual decision, timeframe, and constraints.
 2. Use every relevant read-only tool before discussing restaurant-specific numbers.
-2a. For questions about policies, recipes, SOPs, training manuals, service standards, or book knowledge, search the uploaded knowledge base first.
+2a. For questions about policies, recipes, SOPs, training manuals, service standards, book knowledge, conversational quality, or how the AI should reason, search the uploaded knowledge base first.
 3. Compare revenue, cost, margin, demand, and operational risk when the tools provide them.
 4. Lead with the answer, explain the evidence, then give one prioritized next action.
 5. Ask one short clarifying question when the timeframe, item, or requested action is ambiguous.
@@ -17,6 +17,9 @@ Response style:
 - Use plain business language, short sections, and at most five key figures.
 - Explain why a number matters; do not merely repeat tool output.
 - Distinguish facts from recommendations.
+- Answer like a calm human manager: acknowledge the intent, reason privately, then present the conclusion, evidence, tradeoff, and next action.
+- When using uploaded books or open-source conversation guidance, cite the document titles briefly and adapt the guidance to the restaurant decision instead of copying long passages.
+- If a question contains multiple intents, address the primary decision first and list the secondary follow-up instead of blending them together.
 - When data is missing, name the exact data needed and how to provide it.
 - For broad questions such as "what needs attention?", inspect sales, weak menu items, and inventory before prioritizing.
 
@@ -60,6 +63,23 @@ function formatRefunds(data) {
   return `Refund review\n\nRefunds: ${data.refunds}\nRefunded value: ${money(data.refunded_amount)}\nTop reasons: ${data.top_reasons.map((item) => `${item.reason} (${item.count})`).join(", ") || "Not specified"}\n\nRecommendation: Investigate the most common reason first and compare it with the affected menu items or shifts.`;
 }
 
+function formatKnowledgeResults(query, restaurantId, arabic = false) {
+  const data = executeTool("search_knowledge_base", { query }, restaurantId);
+  if (!data.results.length) {
+    return arabic
+      ? "لم أجد نتيجة واضحة في الكتب أو مواد التدريب المستوردة لهذا السؤال.\n\nالتوصية: اسأل بسؤال أكثر تحديداً، أو استورد المادة التدريبية ذات الصلة أولاً."
+      : "I did not find a clear match in the uploaded books or training material for this question.\n\nRecommendation: Ask a more specific question, or import the relevant manual first.";
+  }
+  const sources = [...new Set(data.results.map((item) => item.title))].slice(0, 3).join(", ");
+  const snippets = data.results.slice(0, 3).map((item, index) => {
+    const clean = item.excerpt.replace(/\s+/g, " ").trim().slice(0, 260);
+    return `${index + 1}. ${item.title}: ${clean}${clean.length >= 260 ? "..." : ""}`;
+  }).join("\n");
+  return arabic
+    ? `إجابة مبنية على المعرفة المستوردة\n\nالمصادر: ${sources}\n\n${snippets}\n\nالقرار العملي: استخدم هذه المراجع كدليل، ثم اربطها ببيانات مطعمك الفعلية قبل تغيير التشغيل أو القائمة.`
+    : `Knowledge-based guidance\n\nSources: ${sources}\n\n${snippets}\n\nPractical decision: Use these references as guidance, then connect them to your live restaurant data before changing operations or the menu.`;
+}
+
 function formatLowPerformance(items) {
   if (!items.length) return "No menu item currently meets the low-performance threshold.\n\nRecommendation: Keep monitoring contribution margin and unit sales each week.";
   return `Menu profit risks\n\n${items.slice(0, 4).map((item, index) => `${index + 1}. ${item.name}: ${item.margin_percent}% margin, ${item.units} sold, ${money(item.profit)} contribution`).join("\n")}\n\nRecommendation: Review ${items[0].name} first. Check its portion cost and price before considering removal.`;
@@ -76,6 +96,7 @@ function formatAttention(restaurantId) {
 function demoReplyArabic(text, restaurantId) {
   const q = text.trim();
   if (/(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)|أنشئ.*تقرير/.test(q)) return "هذا الإجراء سيغيّر بيانات المطعم. يرجى تأكيد الإجراء المحدد بوضوح قبل التنفيذ.";
+  if (/(كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار|منطقي|بشري|محادثة|حوار|تفكير|استيضاح)/.test(q)) return formatKnowledgeResults(text, restaurantId, true);
   if (/(استرداد|مرتجع|مرتجعات|إرجاع)/.test(q)) {
     const range = q.includes("شهر") ? "month" : q.includes("اليوم") ? "today" : "week";
     const data = executeTool("get_refund_summary", { range }, restaurantId);
@@ -129,7 +150,7 @@ export function demoReply(text, restaurantId) {
   const q = text.toLowerCase().trim();
   if (/(customer satisfaction|food waste|restaurant next door|weather|competitor)/.test(q)) return "I do not have the required data to answer that reliably. Connect the relevant customer, waste, competitor, or weather data first.";
   if (/(deactivate|disable|delete|activate).*(dish|item)|create.*report/.test(q)) return "This action changes restaurant data. Please confirm the exact action before I execute it.";
-  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard)/.test(q)) return "I can answer from uploaded books and SOPs once they are imported into the knowledge base. Please upload the book text first, then ask this again.";
+  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question)/.test(q)) return formatKnowledgeResults(text, restaurantId);
   if (/^(hi|hello|hey|good (morning|afternoon|evening))[!. ]*$/.test(q)) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
   }
@@ -156,7 +177,7 @@ export function demoReply(text, restaurantId) {
 
 export function inferTools(text) {
   const q = text.toLowerCase();
-  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار)/.test(q)) return ["search_knowledge_base"];
+  if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار|منطقي|بشري|محادثة|حوار|تفكير|استيضاح)/.test(q)) return ["search_knowledge_base"];
   if (/(customer satisfaction|food waste|restaurant next door|weather|competitor|رضا العملاء|هدر الطعام|المطعم المجاور|الطقس)/.test(q)) return [];
   if (/(deactivate|disable|delete|activate).*(dish|item)|(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)/.test(q)) return ["flag_menu_item"];
   if (/create.*report|أنشئ.*تقرير/.test(q)) return ["create_report"];

@@ -19,6 +19,8 @@ for (const scenario of evaluationDataset) {
 
 assert.match(SYSTEM_PROMPT, /same language/i, "Prompt must preserve the owner's language");
 assert.match(SYSTEM_PROMPT, /explicitly confirms/i, "Prompt must enforce action confirmation");
+assert.match(SYSTEM_PROMPT, /calm human manager/i, "Prompt must enforce human manager answer style");
+assert.match(SYSTEM_PROMPT, /conversation guidance/i, "Prompt must use conversational guidance when relevant");
 
 console.log(`Restaurant manager evals: ${evaluationDataset.length - failures.length}/${evaluationDataset.length} passed`);
 if (failures.length) {

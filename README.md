@@ -90,6 +90,18 @@ Use `POST /api/knowledge/import` to add extracted text from restaurant books, SO
 
 The AI can then call `search_knowledge_base(query)` before answering questions about book content. This is retrieval-based grounding, not blind memorization; it keeps answers tied to the uploaded material.
 
+### Training with books and expert conversation examples
+
+The recommended production workflow is:
+
+1. Import private restaurant books, SOPs, recipes, and training manuals into the knowledge base.
+2. Import permitted open-source guidance, such as MIT-licensed conversational AI examples, as separate knowledge documents.
+3. Ask the owner/manager to approve or correct real assistant answers in the feedback panel.
+4. Add the best corrected situations to `server/evals/dataset.js`.
+5. Run `npm run eval -w server` after every prompt, tool, or model change.
+
+This trains behavior safely through retrieval, expert feedback, and regression tests. Do not commit copyrighted book text to GitHub; keep extracted files private and import them only into the deployed database you control.
+
 ## Production notes
 
 Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. Demo credentials and seed behavior should be removed before accepting real customers.
