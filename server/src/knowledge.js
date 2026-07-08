@@ -1,6 +1,11 @@
 import { db } from "./db.js";
 
-const words = (text) => [...new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])];
+const STOPWORDS = new Set([
+  "the", "and", "for", "you", "your", "with", "that", "this", "from", "into", "what", "when", "where", "why", "how",
+  "use", "using", "make", "more", "answer", "tell", "show", "give", "about", "should", "could", "would", "please",
+  "هل", "ما", "ماذا", "كيف", "من", "في", "عن", "على", "إلى", "الى", "هذا", "هذه", "ذلك", "استخدم", "أجبني"
+]);
+const words = (text) => [...new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])].filter((word) => !STOPWORDS.has(word));
 const score = (queryWords, content) => {
   const lower = content.toLowerCase();
   return queryWords.reduce((total, word) => total + (lower.includes(word) ? 1 : 0), 0);
