@@ -32,7 +32,8 @@ test("system prompt requires confirmation for data-changing tools", () => {
 
 test("ambiguous questions trigger clarification instead of invented analysis", () => {
   const reply = demoReply("Can you analyze this?", restaurantId);
-  assert.match(reply, /not sure which decision/i);
+  assert.match(reply, /one specific restaurant question/i);
+  assert.match(reply, /Useful things to ask/i);
   assert.doesNotMatch(reply, /\$\d/);
 });
 

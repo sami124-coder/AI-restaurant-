@@ -17,6 +17,14 @@ Open `http://localhost:5173` and sign in with:
 
 The app works in deterministic demo mode without an API key. Add `OPENAI_API_KEY` to `.env` for natural-language tool calling through the OpenAI Responses API.
 
+Answer-quality controls:
+
+- `OPENAI_MODEL`: choose the current model available to your OpenAI account.
+- `OPENAI_REASONING_EFFORT`: defaults to `medium`; set to `off` if your chosen model does not support reasoning controls.
+- `OPENAI_MAX_OUTPUT_TOKENS`: defaults to `1000` so the assistant can give complete manager-style answers.
+
+The backend sends the latest chat history to the model, uses a strong restaurant-manager system prompt, and grounds restaurant numbers through tools instead of guessing.
+
 ## Architecture
 
 - `web/`: React + Vite chat workspace and live operations sidebar
@@ -66,7 +74,7 @@ After each assistant response, the owner can approve it or provide a corrected m
 
 ## Evaluation dataset
 
-`server/evals/dataset.js` contains 64 reviewed Arabic and English scenarios covering busy/quiet days, menu profitability, low inventory, missing data, refund anomalies, staffing decisions, broad manager questions, and actions requiring confirmation.
+`server/evals/dataset.js` contains 82 reviewed Arabic and English scenarios covering busy/quiet days, menu profitability, low inventory, missing data, refund anomalies, staffing decisions, broad manager questions, real-data setup questions, knowledge-grounded answers, language capability questions, and actions requiring confirmation.
 
 Run it after every prompt, model, or tool change:
 
@@ -120,7 +128,7 @@ The included `Dockerfile` and `railway.json` also support deployment on Railway:
 
 1. Create a Railway project and choose **Deploy from GitHub repo**.
 2. Select `sami124-coder/AI-restaurant-`.
-3. Add `JWT_SECRET` and optionally `OPENAI_API_KEY`.
+3. Add `JWT_SECRET` and optionally `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, and `OPENAI_MAX_OUTPUT_TOKENS`.
 4. Generate a public domain from the service networking settings.
 
 For durable SQLite data, mount a Railway volume at `/data`. Without a volume, the seeded demo still works but changes can reset during redeployment.

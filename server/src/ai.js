@@ -1,27 +1,33 @@
 import OpenAI from "openai";
 import { executeTool, toolDefinitions } from "./tools.js";
 
-export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert general-manager copilot for restaurant owners. Your job is to turn restaurant data into clear, prioritized profit decisions.
+export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert AI restaurant manager assistant. Your job is to answer like ChatGPT, but specialized for restaurants.
+
+You help restaurant owners, managers, waiters, chefs, and operators with menu planning, food cost control, customer service, complaints, staffing, inventory, reservations, delivery, marketing, daily operations, product setup, and real-data connection questions.
 
 Decision process:
 1. Identify the owner's actual decision, timeframe, and constraints.
-2. Use every relevant read-only tool before discussing restaurant-specific numbers.
+2. If the user asks a normal product, setup, language, or capability question, answer it directly without forcing a restaurant analytics tool.
+3. Use every relevant read-only tool before discussing restaurant-specific numbers.
 2a. For questions about policies, recipes, SOPs, training manuals, service standards, book knowledge, conversational quality, or how the AI should reason, search the uploaded knowledge base first.
-3. Compare revenue, cost, margin, demand, and operational risk when the tools provide them.
-4. Lead with the answer, explain the evidence, then give one prioritized next action.
-5. Ask one short clarifying question when the timeframe, item, or requested action is ambiguous.
+4. Compare revenue, cost, margin, demand, and operational risk when the tools provide them.
+5. Lead with the answer, explain the evidence, then give one prioritized next action.
+6. Ask one short clarifying question only when the timeframe, item, or requested action is truly ambiguous.
 
 Response style:
 - Reply in the same language as the owner. If they write Arabic, use clear professional Modern Standard Arabic with natural restaurant terminology.
 - Preserve menu and inventory item names exactly as stored, even when the rest of the answer is Arabic.
-- Use plain business language, short sections, and at most five key figures.
+- Use plain business language, helpful short sections, and at most five key figures.
 - Explain why a number matters; do not merely repeat tool output.
 - Distinguish facts from recommendations.
 - Answer like a calm human manager: acknowledge the intent, reason privately, then present the conclusion, evidence, tradeoff, and next action.
+- Prefer this format when useful: Direct answer, Why, Recommended steps, Example.
 - When using uploaded books or open-source conversation guidance, cite the document titles briefly and adapt the guidance to the restaurant decision instead of copying long passages.
 - If a question contains multiple intents, address the primary decision first and list the secondary follow-up instead of blending them together.
 - When data is missing, name the exact data needed and how to provide it.
+- If information is missing but the user asks for general guidance, make a reasonable assumption, say it is an assumption, and give practical advice.
 - For broad questions such as "what needs attention?", inspect sales, weak menu items, and inventory before prioritizing.
+- Do not give vague fallback answers such as "I am not sure which decision you mean" unless the user is truly unclear.
 
 Safety rules:
 - Never provide a business number unless it came from a tool result.
@@ -40,6 +46,10 @@ function formatCapabilities() {
 
 function formatRealDataStatus() {
   return "Right now the public demo starts with sample restaurant data so you can test the product immediately.\n\nTo use real restaurant data, click “Connect real data” and upload CSV exports from your POS or restaurant systems:\n\n• Orders / historical sales\n• Refunds\n• Menu prices and food costs\n• Inventory quantities and reorder thresholds\n• Staff shifts and labor costs\n\nAfter you import those files, my answers will use your uploaded restaurant data instead of the demo seed data.";
+}
+
+function formatGeneralRestaurantHelp() {
+  return "Direct answer:\nI can help, but I need one specific restaurant question or goal.\n\nUseful things to ask:\n1. “How is the restaurant doing today?”\n2. “Which dish is hurting profit?”\n3. “What inventory needs attention?”\n4. “Do I need more staff tonight?”\n5. “How do I connect my real POS data?”\n\nWhy:\nI answer best when I know whether you want sales, profit, menu, inventory, staffing, or setup help.\n\nExample:\nAsk: “Give me today’s business summary” and I will use the restaurant data available in the app.";
 }
 
 function formatDaily(data) {
@@ -164,7 +174,7 @@ export function demoReply(text, restaurantId) {
   }
   if (/^(thanks|thank you|great|okay|ok)[!. ]*$/.test(q)) return "You’re welcome. What decision should we look at next?";
   if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return formatCapabilities();
-  if (/(real|actual|live|my|own).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data/.test(q)) return formatRealDataStatus();
+  if (/(real|actual|live|my|own|demo|sample|seed).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own|demo|sample|seed)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data|is this.*real|is this.*demo/.test(q)) return formatRealDataStatus();
   if (/(what can you do|help|capabilities)/.test(q)) return "I can help with five decisions:\n\n• Summarize today’s sales and profit\n• Find top and weak menu items\n• Flag low inventory\n• Suggest staffing from demand\n• Create an operating report after your confirmation\n\nTry: “What needs my attention today?”";
   if (/(what needs|attention|priority|priorities|worry|problem)/.test(q) && !/(inventory|stock|restock|ingredient|run out)/.test(q)) return formatAttention(restaurantId);
   let name = "get_daily_sales", args = { date: new Date().toISOString().slice(0, 10) };
@@ -174,7 +184,7 @@ export function demoReply(text, restaurantId) {
   else if (/(top|best|popular|selling|dish|menu item)/.test(q)) { name = "get_top_dishes"; args = {}; }
   else if (/(profit|margin|revenue|cost|week|month)/.test(q)) { name = "get_profit_summary"; args = { range: q.includes("month") ? "month" : q.includes("today") ? "today" : "week" }; }
   else if (/(staff|server|cook|shift|busy|tonight)/.test(q)) { name = "suggest_staffing"; args = { level: q.includes("busy") ? "busy" : "auto", date_time: new Date().toISOString() }; }
-  else if (!/(today|sales|orders|doing|performance|summary)/.test(q)) return "I want to answer from restaurant data, but I’m not sure which decision you mean. Should I check today’s performance, menu profit, inventory, or staffing?";
+  else if (!/(today|sales|orders|doing|performance|summary)/.test(q)) return formatGeneralRestaurantHelp();
   const data = executeTool(name, args, restaurantId);
   if (name === "get_daily_sales") return formatDaily(data);
   if (name === "get_profit_summary") return formatProfit(data);
@@ -190,7 +200,7 @@ export function inferTools(text) {
   if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار|منطقي|بشري|محادثة|حوار|تفكير|استيضاح)/.test(q)) return ["search_knowledge_base"];
   if (/(customer satisfaction|food waste|restaurant next door|weather|competitor|رضا العملاء|هدر الطعام|المطعم المجاور|الطقس)/.test(q)) return [];
   if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return [];
-  if (/(real|actual|live|my|own).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data/.test(q)) return [];
+  if (/(real|actual|live|my|own|demo|sample|seed).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own|demo|sample|seed)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data|is this.*real|is this.*demo/.test(q)) return [];
   if (/(deactivate|disable|delete|activate).*(dish|item)|(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)/.test(q)) return ["flag_menu_item"];
   if (/create.*report|أنشئ.*تقرير/.test(q)) return ["create_report"];
   if (/(refund|refunded|return|chargeback|استرداد|مرتجع|إرجاع)/.test(q)) return ["get_refund_summary"];
@@ -215,8 +225,18 @@ export async function getAssistantReply(messages, restaurantId) {
   const previousAssistant = [...messages].reverse().find((message) => message.role === "assistant")?.content.toLowerCase() || "";
   const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead|نعم|أوافق|موافق|نفذ|نفّذ)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change|تأكيد|إيقاف|تفعيل|تغيير)/.test(previousAssistant);
   const blockedThisRequest = new Set();
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "medium";
+  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1000);
   for (let turn = 0; turn < 6; turn++) {
-    const response = await client.responses.create({ model: process.env.OPENAI_MODEL || "gpt-5.4-mini", instructions: SYSTEM_PROMPT, input, tools: toolDefinitions });
+    const response = await client.responses.create({
+      model,
+      instructions: SYSTEM_PROMPT,
+      input,
+      tools: toolDefinitions,
+      max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1000,
+      ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } })
+    });
     const calls = response.output.filter((x) => x.type === "function_call");
     if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };
     input = [...input, ...response.output];

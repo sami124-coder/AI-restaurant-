@@ -59,5 +59,5 @@ export const evaluationDataset = [
     "Can I upload POS sales data?",
     "Is this using my actual restaurant data?",
     "What data do you need from my restaurant?"
-  ])
+  ], { must_include: ["sample restaurant data", "Connect real data", "POS"] })
 ];
