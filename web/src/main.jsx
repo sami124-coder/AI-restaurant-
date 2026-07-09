@@ -34,6 +34,11 @@ const safeMessage = (message, fallback = "I could not read that response safely.
   toolsUsed: Array.isArray(message?.toolsUsed) ? message.toolsUsed : []
 });
 
+const displayNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString() : "-";
+};
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -245,7 +250,10 @@ function App() {
   const bottom = useRef();
 
   useEffect(() => { if (ready) api("/dashboard").then(setStats).catch(() => setReady(false)); }, [ready]);
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [messages, loading]);
+  useEffect(() => {
+    const node = bottom.current;
+    if (node && typeof node.scrollIntoView === "function") node.scrollIntoView();
+  }, [messages, loading]);
 
   const send = async (event, preset) => {
     event?.preventDefault();
@@ -259,7 +267,6 @@ function App() {
       const assistant = safeMessage(data.message);
       setSessionId(data.sessionId);
       setMessages((items) => [...items, assistant]);
-      window.dispatchEvent(new CustomEvent("answer-ready", { detail: { ...assistant, sessionId: data.sessionId, question: value } }));
       api("/dashboard").then(setStats).catch(() => {});
     } catch (err) {
       setMessages((items) => [...items, safeMessage({ role: "assistant", content: `I couldn't complete that: ${err.message}` })]);
@@ -277,10 +284,10 @@ function App() {
         <div className="restaurant"><small>YOUR RESTAURANT</small><h2>{localStorage.getItem("restaurant")}</h2><i>● Data connected</i></div>
         <nav>
           <b>Today's decision brief</b>
-          <article><TrendingUp/><div><small>NET SALES</small><strong>${stats?.sales?.revenue?.toLocaleString() || "-"}</strong><p>{stats?.sales?.orders || 0} orders</p></div></article>
-          <article><CircleDollarSign/><div><small>EST. PROFIT</small><strong>${stats?.sales?.profit?.toLocaleString() || "-"}</strong><p>{stats?.sales?.margin_percent || 0}% margin</p></div></article>
+          <article><TrendingUp/><div><small>NET SALES</small><strong>${displayNumber(stats?.sales?.revenue)}</strong><p>{stats?.sales?.orders || 0} orders</p></div></article>
+          <article><CircleDollarSign/><div><small>EST. PROFIT</small><strong>${displayNumber(stats?.sales?.profit)}</strong><p>{stats?.sales?.margin_percent || 0}% margin</p></div></article>
           <article><Package/><div><small>STOCK RISKS</small><strong>{stats?.inventory?.low_stock_count ?? "-"}</strong><p>need attention</p></div></article>
-          <article><Utensils/><div><small>TOP DISH</small><strong className="dish">{stats?.topDishes?.[0]?.name || "-"}</strong><p>${stats?.topDishes?.[0]?.revenue || 0} revenue</p></div></article>
+          <article><Utensils/><div><small>TOP DISH</small><strong className="dish">{stats?.topDishes?.[0]?.name || "-"}</strong><p>${displayNumber(stats?.topDishes?.[0]?.revenue)} revenue</p></div></article>
         </nav>
         <div className="approval-note"><ShieldCheck/><div><b>Owner approval required</b><small>AI cannot change operations without you.</small></div></div>
         <button className="logout" onClick={() => { localStorage.clear(); window.dispatchEvent(new Event("auth-change")); setReady(false); }}><LogOut size={16}/> Sign out</button>
@@ -336,7 +343,6 @@ function Root() {
       {authenticated && (
         <>
           <button className="data-fab" onClick={() => setShowData(true)}><Database/> Connect real data</button>
-          <ErrorBoundary><FeedbackCollector/></ErrorBoundary>
         </>
       )}
       {showData && <ErrorBoundary><DataPanel onClose={() => setShowData(false)} onImported={() => {}}/></ErrorBoundary>}
