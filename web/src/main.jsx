@@ -332,16 +332,16 @@ function Root() {
     return () => window.removeEventListener("auth-change", sync);
   }, []);
   return (
-    <ErrorBoundary>
+    <>
       {authenticated && (
         <>
           <button className="data-fab" onClick={() => setShowData(true)}><Database/> Connect real data</button>
-          <FeedbackCollector/>
+          <ErrorBoundary><FeedbackCollector/></ErrorBoundary>
         </>
       )}
-      {showData && <DataPanel onClose={() => setShowData(false)} onImported={() => {}}/>}
-      <App/>
-    </ErrorBoundary>
+      {showData && <ErrorBoundary><DataPanel onClose={() => setShowData(false)} onImported={() => {}}/></ErrorBoundary>}
+      <ErrorBoundary><App/></ErrorBoundary>
+    </>
   );
 }
 
