@@ -51,5 +51,13 @@ export const evaluationDataset = [
     "Do you answer in Arabic?",
     "Can I talk to you in English and Arabic?",
     "What languages do you understand?"
+  ]),
+  ...group("real_data_connection_questions", [], [
+    "Is it real data?",
+    "I need real data",
+    "How do I connect my real restaurant data?",
+    "Can I upload POS sales data?",
+    "Is this using my actual restaurant data?",
+    "What data do you need from my restaurant?"
   ])
 ];
