@@ -45,5 +45,11 @@ export const evaluationDataset = [
     "ماذا يقول كتاب إدارة المطاعم عن شكاوى العملاء؟",
     "استخدم إرشادات المحادثة لتحسين الإجابة",
     "ما سؤال الاستيضاح المناسب قبل تغيير عدد الموظفين؟"
+  ]),
+  ...group("language_capabilities", [], [
+    "Can you speak Arabic?",
+    "Do you answer in Arabic?",
+    "Can I talk to you in English and Arabic?",
+    "What languages do you understand?"
   ])
 ];

@@ -34,6 +34,10 @@ const money = (value) => `$${Number(value).toLocaleString(undefined, { minimumFr
 const mutatingTools = new Set(["flag_menu_item", "create_report"]);
 const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 
+function formatCapabilities() {
+  return "Yes. I can speak Arabic and English.\n\nYou can ask in Arabic, for example:\n\n• كيف أداء المطعم اليوم؟\n• ما أكثر طبق يضر الربح؟\n• هل أحتاج موظفين إضافيين الليلة؟\n\nI will answer in the same language you use, and I will use restaurant data when the question needs numbers.";
+}
+
 function formatDaily(data) {
   if (!data.orders) return `There are no recorded orders for ${data.date}.\n\nRecommendation: Import or enter sales data before making an operating decision.`;
   return `Today’s performance\n\nSales: ${money(data.revenue)}\nOrders: ${data.orders}\nProfit: ${money(data.profit)}\nMargin: ${data.margin_percent}%\nPeak hour: ${data.peak_hour || "Not available"}\n\nRecommendation: Protect service quality during ${data.peak_hour || "the next busy period"} and review low-stock items before the next shift.`;
@@ -155,6 +159,7 @@ export function demoReply(text, restaurantId) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
   }
   if (/^(thanks|thank you|great|okay|ok)[!. ]*$/.test(q)) return "You’re welcome. What decision should we look at next?";
+  if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return formatCapabilities();
   if (/(what can you do|help|capabilities)/.test(q)) return "I can help with five decisions:\n\n• Summarize today’s sales and profit\n• Find top and weak menu items\n• Flag low inventory\n• Suggest staffing from demand\n• Create an operating report after your confirmation\n\nTry: “What needs my attention today?”";
   if (/(what needs|attention|priority|priorities|worry|problem)/.test(q) && !/(inventory|stock|restock|ingredient|run out)/.test(q)) return formatAttention(restaurantId);
   let name = "get_daily_sales", args = { date: new Date().toISOString().slice(0, 10) };
@@ -179,6 +184,7 @@ export function inferTools(text) {
   const q = text.toLowerCase();
   if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار|منطقي|بشري|محادثة|حوار|تفكير|استيضاح)/.test(q)) return ["search_knowledge_base"];
   if (/(customer satisfaction|food waste|restaurant next door|weather|competitor|رضا العملاء|هدر الطعام|المطعم المجاور|الطقس)/.test(q)) return [];
+  if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return [];
   if (/(deactivate|disable|delete|activate).*(dish|item)|(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)/.test(q)) return ["flag_menu_item"];
   if (/create.*report|أنشئ.*تقرير/.test(q)) return ["create_report"];
   if (/(refund|refunded|return|chargeback|استرداد|مرتجع|إرجاع)/.test(q)) return ["get_refund_summary"];
