@@ -42,6 +42,9 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) {
     return { error };
   }
+  componentDidCatch(error, info) {
+    console.error("Restaurant Decision AI display error", error, info);
+  }
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -50,6 +53,7 @@ class ErrorBoundary extends React.Component {
           <div className="brand"><span><Bot /></span><b>Restaurant Decision AI</b></div>
           <h1>Something went wrong.<br/><em>Reset fixes it.</em></h1>
           <p>The app caught a display error instead of showing a blank white screen.</p>
+          <p style={{ fontSize: 14, color: "#8a3b2f", wordBreak: "break-word" }}>{String(this.state.error?.message || this.state.error || "Unknown display error")}</p>
           <form>
             <button type="button" onClick={() => { localStorage.clear(); window.location.reload(); }}>
               Reset app
@@ -208,6 +212,8 @@ function FeedbackCollector() {
       setSaved(true);
     }
   };
+
+  if (!answer.id || !answer.sessionId) return null;
 
   return (
     <aside className="feedback-card">
