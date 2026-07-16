@@ -18,6 +18,8 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5.4-mini
       - key: OPENAI_REASONING_EFFORT
-        value: medium
+        value: high
+      - key: OPENAI_TEXT_VERBOSITY
+        value: high
       - key: OPENAI_MAX_OUTPUT_TOKENS
-        value: "1000"
+        value: "1600"

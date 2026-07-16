@@ -14,14 +14,24 @@ Decision process:
 5. Lead with the answer, explain the evidence, then give one prioritized next action.
 6. Ask one short clarifying question only when the timeframe, item, or requested action is truly ambiguous.
 
+Before answering, do a private quality pass:
+- What is the user really trying to decide?
+- Which facts come from tools, restaurant data, or uploaded knowledge?
+- What is assumption versus evidence?
+- If the question contains arithmetic, calculate step by step and show the formula.
+- What would a strong human general manager say next?
+- Is the final answer direct, useful, and specific enough to act on?
+
 Response style:
 - Reply in the same language as the owner. If they write Arabic, use clear professional Modern Standard Arabic with natural restaurant terminology.
 - Preserve menu and inventory item names exactly as stored, even when the rest of the answer is Arabic.
 - Use plain business language, helpful short sections, and at most five key figures.
 - Explain why a number matters; do not merely repeat tool output.
 - Distinguish facts from recommendations.
+- For logic tests and operational word problems, solve the calculation first, then explain the restaurant decision.
 - Answer like a calm human manager: acknowledge the intent, reason privately, then present the conclusion, evidence, tradeoff, and next action.
 - Prefer this format when useful: Direct answer, Why, Recommended steps, Example.
+- For strategy, setup, training, marketing, service, or operational questions, give a thoughtful answer even when no numeric restaurant data is required.
 - When using uploaded books or open-source conversation guidance, cite the document titles briefly and adapt the guidance to the restaurant decision instead of copying long passages.
 - If a question contains multiple intents, address the primary decision first and list the secondary follow-up instead of blending them together.
 - When data is missing, name the exact data needed and how to provide it.
@@ -49,7 +59,90 @@ function formatRealDataStatus() {
 }
 
 function formatGeneralRestaurantHelp() {
-  return "Direct answer:\nI can help, but I need one specific restaurant question or goal.\n\nUseful things to ask:\n1. “How is the restaurant doing today?”\n2. “Which dish is hurting profit?”\n3. “What inventory needs attention?”\n4. “Do I need more staff tonight?”\n5. “How do I connect my real POS data?”\n\nWhy:\nI answer best when I know whether you want sales, profit, menu, inventory, staffing, or setup help.\n\nExample:\nAsk: “Give me today’s business summary” and I will use the restaurant data available in the app.";
+  return "Direct answer:\nI can help, but I need one clearer restaurant question or goal to give a strong manager answer.\n\nGood questions to ask:\n1. “How is the restaurant doing today?”\n2. “Which dish is hurting profit?”\n3. “What inventory needs attention?”\n4. “Do I need more staff tonight?”\n5. “How do I connect my real POS data?”\n\nWhy:\nA good manager answer depends on the decision type: sales, profit, menu, inventory, staffing, service, marketing, or setup.\n\nExample:\nAsk: “Give me today’s business summary and tell me the first action I should take.”";
+}
+
+function formatGeneralManagerAdvice(q) {
+  const topic = (() => {
+    if (/(waste|spoilage|throw.*away|overprep|over-prep)/.test(q)) return "waste";
+    if (/(complaint|bad review|angry customer|service problem|customer service)/.test(q)) return "complaints";
+    if (/(marketing|promotion|instagram|tiktok|ads|more customers|increase traffic)/.test(q)) return "marketing";
+    if (/(price|pricing|raise prices|discount|menu engineering)/.test(q)) return "pricing";
+    if (/(train|training|staff performance|team coaching|service coaching)/.test(q)) return "training";
+    if (/(reservation|delivery|online order|takeaway|takeout)/.test(q)) return "channels";
+    if (/(open.*restaurant|start.*restaurant|new restaurant|business plan)/.test(q)) return "startup";
+    if (/(improve|better|strategy|plan|advice|recommend)/.test(q)) return "improvement";
+    return null;
+  })();
+  if (!topic) return null;
+
+  const responses = {
+    waste: "Direct answer:\nStart by reducing over-prep, not by cutting quality.\n\nWhy:\nMost restaurant waste comes from inaccurate prep levels, weak portion control, and ingredients that are not cross-used across the menu. Without your waste log I cannot give a dollar amount, but the operating logic is clear: measure waste by item, then attack the top two causes.\n\nRecommended steps:\n1. Track waste daily by ingredient for 7 days.\n2. Compare prep quantity with actual sales by daypart.\n3. Set par levels for high-waste items.\n4. Cross-use fragile ingredients in specials before they expire.\n5. Review portion sizes with the kitchen lead.\n\nNext action:\nUpload inventory and sales data, then ask: “Which ingredients are likely causing waste?”",
+    complaints: "Direct answer:\nHandle complaints with speed, ownership, and a visible fix.\n\nWhy:\nThe goal is not only to satisfy one guest; it is to protect repeat business and stop the same issue from spreading across shifts.\n\nRecommended response flow:\n1. Acknowledge the issue without arguing.\n2. Apologize briefly and specifically.\n3. Fix the immediate guest problem.\n4. Record the reason: food quality, wait time, wrong order, cleanliness, or staff attitude.\n5. Review patterns by shift and menu item.\n\nExample:\n“You are right to point that out. I am sorry the experience missed our standard. I will fix this now and also log it so we can stop it happening again.”",
+    marketing: "Direct answer:\nMarket the dishes and moments that already prove demand, not random discounts.\n\nWhy:\nDiscounts can increase traffic while damaging margin. A stronger restaurant strategy is to promote high-margin popular dishes, slow hours, and repeat visits.\n\nRecommended steps:\n1. Pick one hero dish with strong margin.\n2. Create a simple offer for a quiet daypart.\n3. Post short video/photo content around the dish, not the restaurant in general.\n4. Give staff one sentence to recommend it.\n5. Track orders before and after the promotion.\n\nNext action:\nAsk me: “Which dish should I promote?” and I will use menu sales and margin data.",
+    pricing: "Direct answer:\nDo not raise prices evenly across the whole menu. Adjust items based on margin, demand, and customer sensitivity.\n\nWhy:\nA popular high-margin item may not need a change. A low-margin popular item may need a price increase, portion adjustment, or supplier review.\n\nRecommended steps:\n1. Rank dishes by contribution margin.\n2. Identify high-sales / low-margin items first.\n3. Test small increases on items with strong demand.\n4. Improve descriptions before changing price if perceived value is weak.\n5. Review results after one week.\n\nRule of thumb:\nIf the item sells well but margin is weak, fix it before touching the rest of the menu.",
+    training: "Direct answer:\nTrain staff around repeatable service behaviors, not long lectures.\n\nWhy:\nRestaurant training works when it is short, observable, and tied to shift performance.\n\nRecommended steps:\n1. Choose one behavior per week: greeting, upselling, complaint handling, table checks, or closing duties.\n2. Demonstrate the standard in one minute.\n3. Let staff practice the exact phrase or action.\n4. Observe during service.\n5. Give feedback the same day.\n\nExample:\nFor servers: “Recommend one high-margin item naturally: 'If you like something rich, the Lobster Pasta is our best seller tonight.'”",
+    channels: "Direct answer:\nTreat dine-in, reservations, delivery, and takeaway as separate profit channels.\n\nWhy:\nDelivery can increase revenue but hurt profit if packaging, commission, and kitchen timing are not controlled.\n\nRecommended steps:\n1. Track sales and costs by channel.\n2. Limit delivery menus to items that travel well.\n3. Set prep-time rules for busy hours.\n4. Watch refunds and complaints by channel.\n5. Promote pickup when delivery commission is too high.\n\nNext action:\nUpload order data with channel labels, then ask: “Which channel is most profitable?”",
+    startup: "Direct answer:\nBuild the restaurant around unit economics before branding.\n\nWhy:\nA beautiful restaurant fails if rent, labor, food cost, and average check do not work together.\n\nRecommended steps:\n1. Define concept, target customer, and average check.\n2. Estimate rent, labor, food cost, and break-even sales.\n3. Build a small menu with shared ingredients.\n4. Test pricing and portions before launch.\n5. Create daily operating reports from day one.\n\nNext action:\nPrepare estimated menu prices, food costs, rent, staff wages, and expected orders; then I can help build a break-even plan.",
+    improvement: "Direct answer:\nImprove the restaurant by fixing the highest-impact constraint first, not by changing everything at once.\n\nWhy:\nA general manager looks for the bottleneck: weak sales, weak margin, low stock, slow service, poor reviews, or overstaffing. The right answer depends on which constraint is costing the most.\n\nRecommended steps:\n1. Check today’s sales and profit.\n2. Identify weak menu items.\n3. Check low inventory before peak service.\n4. Review staffing against expected demand.\n5. Pick one action for the next shift.\n\nNext action:\nAsk: “What needs my attention today?” and I will prioritize sales, menu profit, and inventory together."
+  };
+
+  return responses[topic];
+}
+
+function formatRestaurantLogicReasoning(q) {
+  if (/120 chicken portions.*35.*lunch.*48.*dinner.*ten portions.*damaged|120.*chicken.*35.*48.*10/i.test(q)) {
+    return "Direct answer:\n27 usable chicken portions remain.\n\nCalculation:\n120 starting portions − 35 lunch portions − 48 dinner portions − 10 damaged portions = 27.\n\nManager note:\nDo not plan service from the original 120. Use 27 as the available usable stock unless more chicken is prepped or delivered.";
+  }
+  if (/30 tables.*twenty tables.*four.*ten tables.*two|20.*tables.*4.*10.*tables.*2/i.test(q)) {
+    return "Direct answer:\nMaximum seating capacity is 100 customers.\n\nCalculation:\n20 tables × 4 seats = 80 seats\n10 tables × 2 seats = 20 seats\nTotal = 100 seats.\n\nManager note:\nThis is the physical maximum, not necessarily the safe operating capacity if staffing or kitchen throughput is lower.";
+  }
+  if (/five waiters.*75 customers|5 waiters.*75 customers/i.test(q)) {
+    return "Direct answer:\nEach waiter should serve 15 customers per hour.\n\nCalculation:\n75 customers ÷ 5 waiters = 15 customers per waiter.\n\nManager note:\nThat is only reasonable if service stations, kitchen speed, and table turnover are balanced.";
+  }
+  if (/waiter is absent.*busiest period.*close five tables.*redistribute/i.test(q)) {
+    return "Direct answer:\nDo not choose blindly. First compare the remaining staff capacity with expected guests and service standard.\n\nReasoning:\nIf the remaining waiters can absorb the extra tables without long waits or missed service steps, redistribute tables temporarily. If redistributing would overload them and damage service quality, closing or pausing five tables is safer.\n\nRecommended decision rule:\n1. Count available waiters.\n2. Estimate guests per waiter during peak.\n3. Check kitchen and cashier bottlenecks.\n4. If wait time will rise beyond the acceptable limit, close or stagger seating.\n\nPractical recommendation:\nTry redistribution only if the remaining team stays within a safe workload. Otherwise close five tables temporarily and communicate the wait clearly.";
+  }
+  if (/20 kg of rice.*45 kg.*supplier needs two days|45 kg.*rice.*two days/i.test(q)) {
+    return "Direct answer:\nYes, order today.\n\nCalculation:\nDaily rice use = 20 kg\nSupplier lead time = 2 days\nNeeded during lead time = 20 × 2 = 40 kg\nCurrent stock = 45 kg\nSafety stock left after two days = 5 kg.\n\nManager recommendation:\nOrder now because 5 kg is too little safety stock if sales are higher than normal, delivery is late, or prep waste occurs.";
+  }
+  if (/costs?\s*\$?8.*sold for\s*\$?12|prepare.*\$8.*\$12/i.test(q)) {
+    return "Direct answer:\nProfit per dish is $4, and profit margin based on selling price is 33.3%.\n\nCalculation:\nProfit = Selling price − Cost = $12 − $8 = $4\nProfit margin = $4 ÷ $12 × 100 = 33.3%.\n\nManager note:\nA 33.3% margin may be acceptable or weak depending on the restaurant type, labor, rent, and target food-cost percentage.";
+  }
+  if (/severe peanut allergy.*peanut sauce|peanut allergy/i.test(q)) {
+    return "Direct answer:\nDo not serve that meal.\n\nWhy:\nA severe peanut allergy is a safety issue, not a preference. If the meal contains peanut sauce, serving it creates unacceptable health risk.\n\nManager recommendation:\n1. Warn the customer clearly that the selected item contains peanut sauce.\n2. Offer a verified peanut-free alternative.\n3. Confirm ingredients with the kitchen.\n4. Prevent cross-contamination with clean utensils, surfaces, pans, and gloves.\n5. If you cannot guarantee safety, say so honestly and do not serve the item.";
+  }
+  if (/order a.*two dishes.*15 minutes.*order b.*eight dishes.*five minutes|two orders arrive together/i.test(q)) {
+    return "Direct answer:\nStart Order A immediately, while beginning the longest-prep components of Order B in parallel if kitchen capacity allows.\n\nReasoning:\nOrder A has waited longer and is smaller, so it can likely be completed quickly and reduce guest waiting time. Order B is larger, so ignoring it completely may create a later bottleneck.\n\nPractical kitchen decision:\n1. Put Order A into active preparation now.\n2. Start any long-cook items from Order B if a station is free.\n3. Do not let the large order block the smaller overdue order.\n4. Expedite both based on actual prep times and station capacity.";
+  }
+  if (/friday sales.*4,?000.*saturday.*6,?000.*sunday.*5,?000|4,?000.*6,?000.*5,?000.*average/i.test(q)) {
+    return "Direct answer:\nAverage daily sales were $5,000.\n\nCalculation:\n($4,000 + $6,000 + $5,000) ÷ 3 = $15,000 ÷ 3 = $5,000.\n\nManager note:\nUse the average as a planning baseline, but still staff differently by day because Saturday was clearly stronger than Friday.";
+  }
+  if (/sales increased by 20%.*food waste increased by 50%|20%.*sales.*50%.*waste/i.test(q)) {
+    return "Direct answer:\nNot necessarily. Performance is not definitely improving.\n\nWhy:\nHigher sales are positive, but a 50% increase in food waste can reduce or even erase the profit gain. Revenue alone does not prove the restaurant is healthier.\n\nMissing information needed:\n1. Food cost before and after the increase.\n2. Waste value in dollars.\n3. Gross profit and net profit.\n4. Whether the waste came from over-prep, spoilage, returns, or portion control.\n\nManager recommendation:\nCelebrate the sales increase, but investigate waste immediately before calling the result a real improvement.";
+  }
+  if (/100 reservations.*80 available seats|reservations for 80 available seats/i.test(q)) {
+    return "Direct answer:\nDo not seat 100 guests at the same time if only 80 seats are available.\n\nPractical solution:\n1. Confirm which reservations are still coming.\n2. Check cancellations and no-show history.\n3. Stagger arrival times into waves.\n4. Offer waiting-list positions or later time slots.\n5. Communicate delays before guests arrive.\n6. Protect kitchen and service capacity so the dining room does not collapse.\n\nManager note:\nThe goal is to maximize covers without damaging safety, service quality, or guest trust.";
+  }
+  if (/reduce staff.*lower labo[u]?r costs.*zero waiting time|zero waiting time/i.test(q)) {
+    return "Direct answer:\nNo, that instruction is not automatically logically consistent.\n\nWhy:\nReducing staff lowers labor cost, but it can also increase waiting time if demand stays the same. Guaranteeing zero waiting time usually requires enough capacity to absorb peak demand.\n\nMissing information needed:\n1. Expected customer count by hour.\n2. Current staff productivity.\n3. Average order and service time.\n4. Kitchen capacity.\n5. Acceptable labor-cost target.\n\nManager recommendation:\nChoose a realistic service target, then calculate the minimum staffing level needed to hit it. Do not promise zero waiting time while cutting capacity unless demand is also lower or productivity improves.";
+  }
+  if (/yesterday was unusually busy.*exactly how many cooks.*tomorrow/i.test(q)) {
+    return "Direct answer:\nI cannot give an exact number of cooks from that information alone.\n\nWhy:\n“Yesterday was unusually busy” is a signal, but it is not enough to calculate tomorrow’s kitchen staffing safely.\n\nInformation needed:\n1. Expected customers tomorrow by hour.\n2. Opening hours and peak period.\n3. Menu complexity and prep load.\n4. Average preparation time per order.\n5. Available equipment and stations.\n6. Current cooks’ productivity.\n7. Delivery/takeaway volume.\n\nManager recommendation:\nUse yesterday as a warning, then forecast tomorrow’s covers. If the forecast is close to yesterday’s peak, schedule an extra cook or on-call support rather than guessing an exact number.";
+  }
+  if (/180 customers.*one waiter.*20 customers.*seven waiters.*temporary waiters.*\$60|180.*20.*seven waiters/i.test(q)) {
+    return "Direct answer:\nYou need 2 more waiters, and hiring both temporary waiters is reasonable if serving the expected demand generates more than $120 in contribution.\n\nCalculation:\nRequired waiters = 180 customers ÷ 20 customers per waiter = 9 waiters\nAvailable waiters = 7\nShortage = 9 − 7 = 2 waiters\nTemporary labor cost = 2 × $60 = $120.\n\nManager recommendation:\nHire both if the expected extra sales and service protection are worth more than $120. If margin is tight, first confirm the 180-customer forecast and the main service period length.";
+  }
+  if (/reducing food waste important.*profitability/i.test(q)) {
+    return "Direct answer:\nYes, reducing food waste is important for profitability.\n\nWhy:\nWaste turns purchased ingredients and labor into no revenue. Lower waste usually improves food cost percentage, gross margin, and cash flow.\n\nManager recommendation:\nTrack waste by item and reason, then reduce the largest repeat waste source first.";
+  }
+  if (/throw away 30% of prepared food.*continue preparing the same amount|30% of prepared food/i.test(q)) {
+    return "Direct answer:\nNo, you should not continue preparing the same amount without adjustment.\n\nWhy:\nThrowing away 30% of prepared food is a serious waste signal. It suggests over-prep, weak forecasting, poor storage, or menu demand mismatch.\n\nManager recommendation:\nReduce prep levels carefully, track sales by daypart, keep safety stock for peak periods, and review the result after several services. Do not cut so aggressively that you create stockouts.";
+  }
+  if (/earlier you said reducing waste was important.*consistent|recommendations are consistent/i.test(q)) {
+    return "Direct answer:\nYes, the recommendations are consistent.\n\nWhy:\nIf reducing waste improves profitability, then continuing to prepare the same amount while throwing away 30% would contradict that goal. The logical recommendation is to reduce or rebalance prep while protecting service availability.\n\nManager recommendation:\nKeep the principle consistent: reduce waste, but do it with sales forecasts and par levels so you do not create shortages.";
+  }
+  return null;
 }
 
 function formatDaily(data) {
@@ -166,9 +259,13 @@ function demoReplyArabic(text, restaurantId) {
 export function demoReply(text, restaurantId) {
   if (isArabic(text)) return demoReplyArabic(text, restaurantId);
   const q = text.toLowerCase().trim();
-  if (/(customer satisfaction|food waste|restaurant next door|weather|competitor)/.test(q)) return "I do not have the required data to answer that reliably. Connect the relevant customer, waste, competitor, or weather data first.";
+  const logicReasoning = formatRestaurantLogicReasoning(q);
+  if (logicReasoning) return logicReasoning;
+  if (/(customer satisfaction|restaurant next door|weather|competitor)/.test(q)) return "I do not have the required data to answer that reliably. Connect the relevant customer, competitor, or weather data first.";
   if (/(deactivate|disable|delete|activate).*(dish|item)|create.*report/.test(q)) return "This action changes restaurant data. Please confirm the exact action before I execute it.";
   if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question)/.test(q)) return formatKnowledgeResults(text, restaurantId);
+  const managerAdvice = formatGeneralManagerAdvice(q);
+  if (managerAdvice) return managerAdvice;
   if (/^(hi|hello|hey|good (morning|afternoon|evening))[!. ]*$/.test(q)) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
   }
@@ -197,7 +294,9 @@ export function demoReply(text, restaurantId) {
 
 export function inferTools(text) {
   const q = text.toLowerCase();
+  if (formatRestaurantLogicReasoning(q)) return [];
   if (/(book|manual|policy|sop|recipe|training|procedure|service standard|operating standard|logical|human|conversation|reasoning|answer quality|dialogue|intent|clarifying question|كتاب|دليل|سياسة|وصفة|تدريب|إجراء|معيار|منطقي|بشري|محادثة|حوار|تفكير|استيضاح)/.test(q)) return ["search_knowledge_base"];
+  if (formatGeneralManagerAdvice(q)) return [];
   if (/(customer satisfaction|food waste|restaurant next door|weather|competitor|رضا العملاء|هدر الطعام|المطعم المجاور|الطقس)/.test(q)) return [];
   if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return [];
   if (/(real|actual|live|my|own|demo|sample|seed).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own|demo|sample|seed)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data|is this.*real|is this.*demo/.test(q)) return [];
@@ -213,6 +312,18 @@ export function inferTools(text) {
   return [];
 }
 
+async function createOpenAIResponse(client, request) {
+  try {
+    return await client.responses.create(request);
+  } catch (error) {
+    const message = String(error?.message || "");
+    const canRetryWithoutAdvancedControls = error?.status === 400 && /(reasoning|verbosity|text|max_output_tokens|unsupported|unknown|unrecognized)/i.test(message);
+    if (!canRetryWithoutAdvancedControls) throw error;
+    const { reasoning, text, ...basicRequest } = request;
+    return client.responses.create(basicRequest);
+  }
+}
+
 export async function getAssistantReply(messages, restaurantId) {
   if (!process.env.OPENAI_API_KEY) {
     const question = messages.at(-1).content;
@@ -226,16 +337,18 @@ export async function getAssistantReply(messages, restaurantId) {
   const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead|نعم|أوافق|موافق|نفذ|نفّذ)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change|تأكيد|إيقاف|تفعيل|تغيير)/.test(previousAssistant);
   const blockedThisRequest = new Set();
   const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
-  const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "medium";
-  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1000);
+  const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "high";
+  const textVerbosity = process.env.OPENAI_TEXT_VERBOSITY || "high";
+  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1600);
   for (let turn = 0; turn < 6; turn++) {
-    const response = await client.responses.create({
+    const response = await createOpenAIResponse(client, {
       model,
       instructions: SYSTEM_PROMPT,
       input,
       tools: toolDefinitions,
-      max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1000,
-      ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } })
+      max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1600,
+      ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } }),
+      ...(textVerbosity === "off" ? {} : { text: { verbosity: textVerbosity } })
     });
     const calls = response.output.filter((x) => x.type === "function_call");
     if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };

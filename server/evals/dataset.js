@@ -59,5 +59,27 @@ export const evaluationDataset = [
     "Can I upload POS sales data?",
     "Is this using my actual restaurant data?",
     "What data do you need from my restaurant?"
-  ], { must_include: ["sample restaurant data", "Connect real data", "POS"] })
+  ], { must_include: ["sample restaurant data", "Connect real data", "POS"] }),
+  ...group("general_manager_advice", [], [
+    "How can I reduce food waste?",
+    "How should I handle a bad customer complaint?",
+    "Give me a marketing plan for more customers",
+    "Should I raise menu prices?",
+    "How do I train my waiters better?",
+    "How can I improve my restaurant?"
+  ], { must_include: ["Direct answer", "Recommended"] }),
+  { id: "logic-arithmetic-1", category: "restaurant_logic", language: "en", question: "A restaurant has 120 chicken portions. It sells 35 at lunch and 48 at dinner. Ten portions are damaged. How many usable portions remain?", expected_tools: [], must_include: ["27", "120", "35", "48", "10"] },
+  { id: "logic-arithmetic-2", category: "restaurant_logic", language: "en", question: "We have 30 tables. Twenty tables seat four people and ten tables seat two people. What is the restaurant's maximum seating capacity?", expected_tools: [], must_include: ["100", "20 tables", "10 tables"] },
+  { id: "logic-arithmetic-3", category: "restaurant_logic", language: "en", question: "Five waiters can serve 75 customers per hour equally. How many customers should each waiter serve?", expected_tools: [], must_include: ["15 customers", "75", "5"] },
+  { id: "logic-operations-1", category: "restaurant_logic", language: "en", question: "A waiter is absent during the busiest period. Should the manager close five tables or redistribute the tables among the remaining staff? Explain your decision.", expected_tools: [], must_include: ["Do not choose blindly", "remaining staff capacity", "service quality"] },
+  { id: "logic-inventory-1", category: "restaurant_logic", language: "en", question: "We normally use 20 kg of rice daily. Current stock is 45 kg, and the supplier needs two days to deliver. Should we order today?", expected_tools: [], must_include: ["Yes", "40 kg", "5 kg"] },
+  { id: "logic-margin-1", category: "restaurant_logic", language: "en", question: "A dish costs $8 to prepare and is sold for $12. What is the profit per dish and the profit margin based on the selling price?", expected_tools: [], must_include: ["$4", "33.3%"] },
+  { id: "logic-safety-1", category: "restaurant_logic", language: "en", question: "A customer says they have a severe peanut allergy, but the selected meal contains peanut sauce. What should the restaurant manager recommend?", expected_tools: [], must_include: ["Do not serve", "peanut-free", "cross-contamination"] },
+  { id: "logic-kitchen-1", category: "restaurant_logic", language: "en", question: "Two orders arrive together. Order A has two dishes and has waited 15 minutes. Order B has eight dishes and has waited five minutes. Which should be prepared first?", expected_tools: [], must_include: ["Order A", "parallel", "kitchen capacity"] },
+  { id: "logic-average-1", category: "restaurant_logic", language: "en", question: "Friday sales were $4,000, Saturday sales were $6,000 and Sunday sales were $5,000. What was the average daily sale?", expected_tools: [], must_include: ["$5,000", "$15,000"] },
+  { id: "logic-performance-1", category: "restaurant_logic", language: "en", question: "Sales increased by 20%, but food waste increased by 50%. Is restaurant performance definitely improving?", expected_tools: [], must_include: ["Not necessarily", "profit", "waste"] },
+  { id: "logic-reservations-1", category: "restaurant_logic", language: "en", question: "A restaurant received 100 reservations for 80 available seats at the same time. Give a practical solution.", expected_tools: [], must_include: ["Do not seat 100", "stagger", "waiting-list"] },
+  { id: "logic-contradiction-1", category: "restaurant_logic", language: "en", question: "The manager says: Reduce staff to lower labour costs, but also guarantee zero waiting time. Is this instruction logically consistent?", expected_tools: [], must_include: ["not automatically", "Reducing staff", "waiting time"] },
+  { id: "logic-uncertainty-1", category: "restaurant_logic", language: "en", question: "Yesterday was unusually busy. Tell me exactly how many cooks I need tomorrow.", expected_tools: [], must_include: ["cannot give an exact number", "Expected customers", "productivity"] },
+  { id: "logic-staffing-1", category: "restaurant_logic", language: "en", question: "Tomorrow, 180 customers are expected. One waiter can effectively serve 20 customers during the main service period. The restaurant currently has seven waiters. Two additional temporary waiters are available for $60 each. How many more waiters are needed, and should the manager hire them?", expected_tools: [], must_include: ["2 more waiters", "$120", "180"] }
 ];

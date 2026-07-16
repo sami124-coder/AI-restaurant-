@@ -32,8 +32,8 @@ test("system prompt requires confirmation for data-changing tools", () => {
 
 test("ambiguous questions trigger clarification instead of invented analysis", () => {
   const reply = demoReply("Can you analyze this?", restaurantId);
-  assert.match(reply, /one specific restaurant question/i);
-  assert.match(reply, /Useful things to ask/i);
+  assert.match(reply, /one clearer restaurant question/i);
+  assert.match(reply, /Good questions to ask/i);
   assert.doesNotMatch(reply, /\$\d/);
 });
 
@@ -56,6 +56,53 @@ test("help explains the supported decision areas", () => {
   const reply = demoReply("What can you do?", restaurantId);
   assert.match(reply, /Summarize today/);
   assert.match(reply, /Suggest staffing/);
+});
+
+test("general strategy questions receive manager advice instead of a dead-end fallback", () => {
+  const reply = demoReply("How can I reduce food waste?", restaurantId);
+  assert.match(reply, /Direct answer:/);
+  assert.match(reply, /over-prep/i);
+  assert.match(reply, /Recommended steps:/);
+  assert.doesNotMatch(reply, /need one clearer restaurant question/i);
+});
+
+test("restaurant logic questions calculate step by step", () => {
+  const portions = demoReply("A restaurant has 120 chicken portions. It sells 35 at lunch and 48 at dinner. Ten portions are damaged. How many usable portions remain?", restaurantId);
+  assert.match(portions, /27 usable chicken portions/i);
+  assert.match(portions, /120.*35.*48.*10.*27/s);
+
+  const seating = demoReply("We have 30 tables. Twenty tables seat four people and ten tables seat two people. What is the restaurant's maximum seating capacity?", restaurantId);
+  assert.match(seating, /100 customers/i);
+  assert.match(seating, /20 tables.*4 seats.*80/s);
+
+  const margin = demoReply("A dish costs $8 to prepare and is sold for $12. What is the profit per dish and the profit margin based on the selling price?", restaurantId);
+  assert.match(margin, /\$4/);
+  assert.match(margin, /33\.3%/);
+});
+
+test("restaurant logic questions recognize missing information and safety constraints", () => {
+  const cooks = demoReply("Yesterday was unusually busy. Tell me exactly how many cooks I need tomorrow.", restaurantId);
+  assert.match(cooks, /cannot give an exact number/i);
+  assert.match(cooks, /Expected customers/i);
+  assert.doesNotMatch(cooks, /you need \d+ cooks/i);
+
+  const allergy = demoReply("A customer says they have a severe peanut allergy, but the selected meal contains peanut sauce. What should the restaurant manager recommend?", restaurantId);
+  assert.match(allergy, /Do not serve/i);
+  assert.match(allergy, /cross-contamination/i);
+});
+
+test("multi-step staffing and consistency prompts stay logical", () => {
+  const staffing = demoReply("Tomorrow, 180 customers are expected. One waiter can effectively serve 20 customers during the main service period. The restaurant currently has seven waiters. Two additional temporary waiters are available for $60 each. How many more waiters are needed, and should the manager hire them?", restaurantId);
+  assert.match(staffing, /2 more waiters/i);
+  assert.match(staffing, /\$120/);
+
+  const waste = demoReply("We throw away 30% of prepared food. Should we continue preparing the same amount?", restaurantId);
+  assert.match(waste, /No/i);
+  assert.match(waste, /30%/);
+
+  const consistency = demoReply("Earlier you said reducing waste was important. Explain whether your recommendations are consistent.", restaurantId);
+  assert.match(consistency, /consistent/i);
+  assert.match(consistency, /reduce waste/i);
 });
 
 test("Arabic sales question receives an Arabic data-backed answer", () => {
