@@ -111,7 +111,7 @@ function serializeMe(user) {
     branches
   };
 }
-app.get("/api/health", (_, res) => res.json({ status: "ok", ai: process.env.OPENAI_API_KEY ? "openai" : "demo" }));
+app.get("/api/health", (_, res) => res.json({ status: "ok", ai: "built-in" }));
 app.post("/api/auth/register", (req, res, next) => {
   try {
     const parsed = z.object({

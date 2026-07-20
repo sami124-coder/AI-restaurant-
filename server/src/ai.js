@@ -1,7 +1,4 @@
-import OpenAI from "openai";
-import crypto from "node:crypto";
-import { db } from "./db.js";
-import { executeTool, toolDefinitions } from "./tools.js";
+import { executeTool } from "./tools.js";
 
 export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert AI restaurant manager assistant. Your job is to answer like ChatGPT, but specialized for restaurants.
 
@@ -49,16 +46,8 @@ Safety rules:
 - Never imply that a recommendation has been executed when it has not.`;
 
 const money = (value) => new Intl.NumberFormat(undefined, { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(Number(value) || 0);
-const mutatingTools = new Set(["flag_menu_item", "create_report"]);
 const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 const normalizeScope = (scope) => typeof scope === "object" ? scope : { restaurantId: scope };
-
-function createPendingAction(call, scope) {
-  const actionHash = crypto.createHash("sha256").update(`${scope.restaurantId}:${scope.branchId || ""}:${scope.ownerId || ""}:${call.name}:${call.arguments}`).digest("hex").slice(0, 16);
-  db.prepare("INSERT OR IGNORE INTO pending_ai_actions(restaurant_id,branch_id,owner_id,tool_name,arguments,action_hash) VALUES (?,?,?,?,?,?)")
-    .run(scope.restaurantId, scope.branchId || null, scope.ownerId || 0, call.name, call.arguments, actionHash);
-  return { confirmation_required: true, action_hash: actionHash, tool_name: call.name, arguments: JSON.parse(call.arguments), message: `Owner confirmation required. Confirm exact action with code ${actionHash}.` };
-}
 
 function formatCapabilities() {
   return "Yes. I can speak Arabic and English.\n\nYou can ask in Arabic, for example:\n\n• كيف أداء المطعم اليوم؟\n• ما أكثر طبق يضر الربح؟\n• هل أحتاج موظفين إضافيين الليلة؟\n\nI will answer in the same language you use, and I will use restaurant data when the question needs numbers.";
@@ -322,79 +311,8 @@ export function inferTools(text) {
   return [];
 }
 
-async function createOpenAIResponseOnce(client, request) {
-  try {
-    return await client.responses.create(request);
-  } catch (error) {
-    const message = String(error?.message || "");
-    const canRetryWithoutAdvancedControls = error?.status === 400 && /(reasoning|verbosity|text|max_output_tokens|unsupported|unknown|unrecognized)/i.test(message);
-    if (!canRetryWithoutAdvancedControls) throw error;
-    const { reasoning, text, ...basicRequest } = request;
-    return client.responses.create(basicRequest);
-  }
-}
-
-const modelCandidates = (preferred) => [...new Set([preferred, "gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini"].filter(Boolean))];
-const isModelError = (error) => [400, 404].includes(error?.status) && /(model|does not exist|not found|unsupported|invalid model|permission)/i.test(String(error?.message || ""));
-
-async function createOpenAIResponse(client, request) {
-  const errors = [];
-  for (const model of modelCandidates(request.model)) {
-    try {
-      return await createOpenAIResponseOnce(client, { ...request, model });
-    } catch (error) {
-      errors.push(`${model}: ${error?.message || error}`);
-      if (!isModelError(error)) throw error;
-    }
-  }
-  throw new Error(`OpenAI model request failed. Tried: ${errors.join(" | ")}`);
-}
-
 export async function getAssistantReply(messages, scope) {
   const context = normalizeScope(scope);
-  if (!process.env.OPENAI_API_KEY) {
-    const question = messages.at(-1).content;
-    return { content: demoReply(question, context), toolsUsed: inferTools(question) };
-  }
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  let input = messages.map(({ role, content }) => ({ role, content }));
-  const toolsUsed = [];
-  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
-  const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "high";
-  const textVerbosity = process.env.OPENAI_TEXT_VERBOSITY || "high";
-  const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1600);
-  try {
-    for (let turn = 0; turn < 6; turn++) {
-      const response = await createOpenAIResponse(client, {
-        model,
-        instructions: SYSTEM_PROMPT,
-        input,
-        tools: toolDefinitions,
-        max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1600,
-        ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } }),
-        ...(textVerbosity === "off" ? {} : { text: { verbosity: textVerbosity } })
-      });
-      const calls = response.output.filter((x) => x.type === "function_call");
-      if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };
-      input = [...input, ...response.output];
-      for (const call of calls) {
-        toolsUsed.push(call.name);
-        let output;
-        if (mutatingTools.has(call.name)) {
-          output = createPendingAction(call, context);
-        }
-        else try { output = executeTool(call.name, JSON.parse(call.arguments), context); }
-        catch (error) { output = { error: error.message }; }
-        input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
-      }
-    }
-  } catch (error) {
-    console.error("OpenAI chat failed; falling back to local restaurant tools.", error);
-    const question = messages.at(-1)?.content || "";
-    return {
-      content: `OpenAI request failed, so I used the built-in restaurant tools instead.\n\n${demoReply(question, context)}`,
-      toolsUsed: inferTools(question)
-    };
-  }
-  return { content: "I could not complete that analysis safely. Please narrow the request.", toolsUsed: [...new Set(toolsUsed)] };
+  const question = messages.at(-1)?.content || "";
+  return { content: demoReply(question, context), toolsUsed: inferTools(question) };
 }

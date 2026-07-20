@@ -12,23 +12,14 @@ npm run dev
 
 Open `http://localhost:5173`, choose **Create restaurant**, and create your own owner account, organization, restaurant, and first branch.
 
-The app works in deterministic demo mode without an API key. Add `OPENAI_API_KEY` to `.env` for natural-language tool calling through the OpenAI Responses API.
+The app uses its built-in restaurant assistant mode. It answers supported restaurant operations questions with deterministic business logic and real restaurant-scoped tools. No OpenAI API key or external model is required.
 
-Answer-quality controls:
-
-- `OPENAI_MODEL`: choose the current model available to your OpenAI account.
-- `OPENAI_REASONING_EFFORT`: defaults to `high` so the real model spends more effort before answering; set to `off` if your chosen model does not support reasoning controls.
-- `OPENAI_TEXT_VERBOSITY`: defaults to `high` for fuller ChatGPT-style manager answers; set to `off` if your chosen model does not support verbosity controls.
-- `OPENAI_MAX_OUTPUT_TOKENS`: defaults to `1600` so the assistant can give complete manager-style answers.
-
-The backend sends the latest chat history to the model, uses a strong restaurant-manager system prompt, and grounds restaurant numbers through tools instead of guessing.
-
-Important: without `OPENAI_API_KEY`, the public app uses deterministic demo mode. Demo mode is useful for testing product flow and restaurant tools, but it is not a real GPT-level model. To get ChatGPT-like reasoning, add a valid OpenAI API key and set `OPENAI_MODEL` to a reasoning-capable model available in your account.
+Important: the built-in assistant is rules-based. It can analyze connected restaurant data for supported questions, but it is not an open-ended language model.
 
 ## Architecture
 
 - `web/`: React + Vite chat workspace and live operations sidebar
-- `server/`: Express REST API, JWT authentication, SQLite persistence
+- `server/`: Express REST API, JWT authentication, SQLite persistence, built-in assistant logic
 - Tool implementations are pure restaurant-scoped functions in `server/src/tools.js`
 - Every operational query is constrained by the authenticated organization, restaurant, role, and branch scope.
 
@@ -124,7 +115,7 @@ This trains behavior safely through retrieval, expert feedback, and regression t
 
 ## Production notes
 
-Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. In production the app refuses to start without `JWT_SECRET` and `DATABASE_PATH`. Public demo seeding is disabled unless `ENABLE_DEMO_SEED=true` is explicitly set.
+Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), and configure `CLIENT_ORIGIN`. In production the app refuses to start without `JWT_SECRET` and `DATABASE_PATH`. Public demo seeding is disabled unless `ENABLE_DEMO_SEED=true` is explicitly set.
 
 ## Deploy publicly
 
@@ -132,7 +123,7 @@ The repository includes a Render Blueprint that builds the React frontend, serve
 
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
 
-During setup, optionally enter `OPENAI_API_KEY`. Without it, the public demo uses the safe deterministic manager mode.
+During setup, no AI provider key is needed. `/api/health` reports `ai: "built-in"`.
 
 ### Railway alternative
 
@@ -140,7 +131,7 @@ The included `Dockerfile` and `railway.json` also support deployment on Railway:
 
 1. Create a Railway project and choose **Deploy from GitHub repo**.
 2. Select `sami124-coder/AI-restaurant-`.
-3. Add `JWT_SECRET` and optionally `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, `OPENAI_TEXT_VERBOSITY`, and `OPENAI_MAX_OUTPUT_TOKENS`.
+3. Add `JWT_SECRET` and `DATABASE_PATH`.
 4. Generate a public domain from the service networking settings.
 
 For durable SQLite data, mount a Railway volume at `/data` and set `DATABASE_PATH=/data/restaurant.db`. Without a volume, production startup should be treated as unsafe for real restaurant data.
