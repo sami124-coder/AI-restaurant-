@@ -322,7 +322,7 @@ export function inferTools(text) {
   return [];
 }
 
-async function createOpenAIResponse(client, request) {
+async function createOpenAIResponseOnce(client, request) {
   try {
     return await client.responses.create(request);
   } catch (error) {
@@ -332,6 +332,22 @@ async function createOpenAIResponse(client, request) {
     const { reasoning, text, ...basicRequest } = request;
     return client.responses.create(basicRequest);
   }
+}
+
+const modelCandidates = (preferred) => [...new Set([preferred, "gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini"].filter(Boolean))];
+const isModelError = (error) => [400, 404].includes(error?.status) && /(model|does not exist|not found|unsupported|invalid model|permission)/i.test(String(error?.message || ""));
+
+async function createOpenAIResponse(client, request) {
+  const errors = [];
+  for (const model of modelCandidates(request.model)) {
+    try {
+      return await createOpenAIResponseOnce(client, { ...request, model });
+    } catch (error) {
+      errors.push(`${model}: ${error?.message || error}`);
+      if (!isModelError(error)) throw error;
+    }
+  }
+  throw new Error(`OpenAI model request failed. Tried: ${errors.join(" | ")}`);
 }
 
 export async function getAssistantReply(messages, scope) {
@@ -347,29 +363,38 @@ export async function getAssistantReply(messages, scope) {
   const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "high";
   const textVerbosity = process.env.OPENAI_TEXT_VERBOSITY || "high";
   const maxOutputTokens = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || 1600);
-  for (let turn = 0; turn < 6; turn++) {
-    const response = await createOpenAIResponse(client, {
-      model,
-      instructions: SYSTEM_PROMPT,
-      input,
-      tools: toolDefinitions,
-      max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1600,
-      ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } }),
-      ...(textVerbosity === "off" ? {} : { text: { verbosity: textVerbosity } })
-    });
-    const calls = response.output.filter((x) => x.type === "function_call");
-    if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };
-    input = [...input, ...response.output];
-    for (const call of calls) {
-      toolsUsed.push(call.name);
-      let output;
-      if (mutatingTools.has(call.name)) {
-        output = createPendingAction(call, context);
+  try {
+    for (let turn = 0; turn < 6; turn++) {
+      const response = await createOpenAIResponse(client, {
+        model,
+        instructions: SYSTEM_PROMPT,
+        input,
+        tools: toolDefinitions,
+        max_output_tokens: Number.isFinite(maxOutputTokens) ? maxOutputTokens : 1600,
+        ...(reasoningEffort === "off" ? {} : { reasoning: { effort: reasoningEffort } }),
+        ...(textVerbosity === "off" ? {} : { text: { verbosity: textVerbosity } })
+      });
+      const calls = response.output.filter((x) => x.type === "function_call");
+      if (!calls.length) return { content: response.output_text || "I need more information to answer that.", toolsUsed: [...new Set(toolsUsed)] };
+      input = [...input, ...response.output];
+      for (const call of calls) {
+        toolsUsed.push(call.name);
+        let output;
+        if (mutatingTools.has(call.name)) {
+          output = createPendingAction(call, context);
+        }
+        else try { output = executeTool(call.name, JSON.parse(call.arguments), context); }
+        catch (error) { output = { error: error.message }; }
+        input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
       }
-      else try { output = executeTool(call.name, JSON.parse(call.arguments), context); }
-      catch (error) { output = { error: error.message }; }
-      input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
     }
+  } catch (error) {
+    console.error("OpenAI chat failed; falling back to local restaurant tools.", error);
+    const question = messages.at(-1)?.content || "";
+    return {
+      content: `OpenAI request failed, so I used the built-in restaurant tools instead.\n\n${demoReply(question, context)}`,
+      toolsUsed: inferTools(question)
+    };
   }
   return { content: "I could not complete that analysis safely. Please narrow the request.", toolsUsed: [...new Set(toolsUsed)] };
 }
