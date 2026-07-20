@@ -10,10 +10,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` and sign in with:
-
-- Email: `owner@harbor.test`
-- Password: `demo1234`
+Open `http://localhost:5173`, choose **Create restaurant**, and create your own owner account, organization, restaurant, and first branch.
 
 The app works in deterministic demo mode without an API key. Add `OPENAI_API_KEY` to `.env` for natural-language tool calling through the OpenAI Responses API.
 
@@ -33,7 +30,7 @@ Important: without `OPENAI_API_KEY`, the public app uses deterministic demo mode
 - `web/`: React + Vite chat workspace and live operations sidebar
 - `server/`: Express REST API, JWT authentication, SQLite persistence
 - Tool implementations are pure restaurant-scoped functions in `server/src/tools.js`
-- Every database query is constrained by the authenticated owner's `restaurant_id`
+- Every operational query is constrained by the authenticated organization, restaurant, role, and branch scope.
 
 ## MVP planning docs
 
@@ -53,7 +50,9 @@ The next implementation task is Task 1 only: account registration, organization,
 - `GET /api/chat/sessions/:id/messages`
 - `POST /api/chat`
 - `GET /api/data/status`
+- `POST /api/data/import/preview`
 - `POST /api/data/import`
+- `POST /api/actions/:hash/confirm`
 - `GET /api/health`
 
 ## Real restaurant data imports
@@ -62,13 +61,13 @@ Use **Connect real data** inside the app to upload CSV exports. Column names:
 
 | Data type | Required columns | Optional columns |
 | --- | --- | --- |
-| Orders | `created_at,total_price,cost` | `items` (JSON), or `item_name,quantity` |
-| Refunds | `amount,created_at` | `order_id,reason` |
+| Orders | `created_at,total_price,cost` | `items` (JSON), or `item_name,quantity`, `discount`, `commission`, `other_cost`, `source_key` |
+| Refunds | `amount,created_at` | `order_id,reason,source_key` |
 | Menu | `name,price,cost` | `active` |
 | Inventory | `item_name,quantity,threshold` | — |
 | Staff shifts | `employee_name,role,start_at,end_at,hourly_rate` | — |
 
-Dates should be ISO-compatible, for example `2026-07-04T19:00:00Z`. Menu and inventory imports update matching names; orders, refunds, and shifts append new records.
+Dates should be ISO-compatible, for example `2026-07-04T19:00:00Z`. Imports must be previewed before confirmation. Orders and refunds skip duplicates by `source_key` or row fingerprint. Inventory is branch-scoped. Orders with `quantity > 1` store item unit price/cost correctly so dish revenue is not doubled.
 
 ## Expert answer collection
 
@@ -125,11 +124,11 @@ This trains behavior safely through retrieval, expert feedback, and regression t
 
 ## Production notes
 
-Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. Demo credentials and seed behavior should be removed before accepting real customers.
+Set a strong `JWT_SECRET`, use TLS, move SQLite to a durable volume (or swap to PostgreSQL), configure `CLIENT_ORIGIN`, and keep the OpenAI key server-side. In production the app refuses to start without `JWT_SECRET` and `DATABASE_PATH`. Public demo seeding is disabled unless `ENABLE_DEMO_SEED=true` is explicitly set.
 
 ## Deploy publicly
 
-The repository includes a Render Blueprint that builds the React frontend, serves it from Express, and creates a generated JWT secret. The free demo uses ephemeral SQLite storage, so data can reset when Render restarts the service. Upgrade to a persistent disk or PostgreSQL before storing real restaurant data.
+The repository includes a Render Blueprint that builds the React frontend, serves it from Express, creates a generated JWT secret, and mounts SQLite on `/var/data`. Keep that disk enabled or switch to PostgreSQL before storing real restaurant data.
 
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
 
@@ -144,4 +143,4 @@ The included `Dockerfile` and `railway.json` also support deployment on Railway:
 3. Add `JWT_SECRET` and optionally `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_REASONING_EFFORT`, `OPENAI_TEXT_VERBOSITY`, and `OPENAI_MAX_OUTPUT_TOKENS`.
 4. Generate a public domain from the service networking settings.
 
-For durable SQLite data, mount a Railway volume at `/data`. Without a volume, the seeded demo still works but changes can reset during redeployment.
+For durable SQLite data, mount a Railway volume at `/data` and set `DATABASE_PATH=/data/restaurant.db`. Without a volume, production startup should be treated as unsafe for real restaurant data.

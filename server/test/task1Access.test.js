@@ -72,6 +72,7 @@ test("registration creates an isolated organization, restaurant, owner, and afte
 
   assert.equal(invited.status, 201);
   assert.equal(invited.payload.role, "branch_manager");
+  assert.notEqual(invited.payload.temporaryPassword, "ChangeMe123!");
 
   const managerLogin = await request(server, "/api/auth/login", {
     method: "POST",
@@ -95,6 +96,26 @@ test("registration creates an isolated organization, restaurant, owner, and afte
     body: { name: "Unauthorized Branch", code: "NO-01", city: "Guangzhou" }
   });
   assert.equal(forbiddenBranchCreate.status, 403);
+
+  const viewer = await request(server, "/api/users/invite", {
+    token: registered.payload.token,
+    method: "POST",
+    body: {
+      email: `viewer-${stamp}@example.test`,
+      name: "Viewer",
+      role: "viewer"
+    }
+  });
+  const viewerLogin = await request(server, "/api/auth/login", {
+    method: "POST",
+    body: { email: `viewer-${stamp}@example.test`, password: viewer.payload.temporaryPassword }
+  });
+  const blockedImport = await request(server, "/api/data/import/preview", {
+    token: viewerLogin.payload.token,
+    method: "POST",
+    body: { type: "inventory", csv: "item_name,quantity,threshold\nFlour,10,5" }
+  });
+  assert.equal(blockedImport.status, 403);
 });
 
 test("owners cannot edit branches in another organization", async (t) => {

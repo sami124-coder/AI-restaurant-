@@ -14,8 +14,8 @@ test("greeting receives a conversational response without fabricated figures", (
 
 test("profit question returns readable data and an action", () => {
   const reply = demoReply("What is my profit this week?", restaurantId);
-  assert.match(reply, /Revenue: \$/);
-  assert.match(reply, /Profit: \$/);
+  assert.match(reply, /Revenue: (CN¥|¥|CNY)/);
+  assert.match(reply, /Profit: (CN¥|¥|CNY)/);
   assert.match(reply, /Recommendation:/);
   assert.doesNotMatch(reply, /{\s*"/);
 });
@@ -116,7 +116,7 @@ test("Arabic profit question returns real figures in Arabic", () => {
   const reply = demoReply("كم أرباح هذا الأسبوع؟", restaurantId);
   assert.match(reply, /ملخص الربح/);
   assert.match(reply, /الإيرادات:/);
-  assert.match(reply, /\$/);
+  assert.match(reply, /(CN¥|¥|CNY)/);
 });
 
 test("Arabic ambiguous question asks for clarification", () => {

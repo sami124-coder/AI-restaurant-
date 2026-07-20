@@ -4,6 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 const file = path.resolve(process.env.DATABASE_PATH || "./data/restaurant.db");
+if (process.env.NODE_ENV === "production" && !process.env.DATABASE_PATH) {
+  throw new Error("DATABASE_PATH is required in production and must point to durable storage.");
+}
 fs.mkdirSync(path.dirname(file), { recursive: true });
 export const db = new Database(file);
 db.pragma("journal_mode = WAL");
@@ -26,6 +29,7 @@ CREATE TABLE IF NOT EXISTS staff_shifts (id INTEGER PRIMARY KEY, restaurant_id I
 CREATE TABLE IF NOT EXISTS answer_feedback (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), session_id INTEGER NOT NULL REFERENCES chat_sessions(id), message_id INTEGER NOT NULL REFERENCES chat_messages(id), question TEXT NOT NULL, original_answer TEXT NOT NULL, rating TEXT NOT NULL CHECK(rating IN ('approved','needs_correction')), corrected_answer TEXT, correct_tools TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(restaurant_id,message_id));
 CREATE TABLE IF NOT EXISTS knowledge_documents (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), title TEXT NOT NULL, source TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS knowledge_chunks (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), document_id INTEGER NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pending_ai_actions (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), branch_id INTEGER REFERENCES branches(id), owner_id INTEGER NOT NULL REFERENCES owners(id), tool_name TEXT NOT NULL, arguments TEXT NOT NULL, action_hash TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','executed','cancelled')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, executed_at TEXT);
 `);
 
 function ensureColumn(table, column, definition) {
@@ -39,6 +43,25 @@ ensureColumn("restaurants", "currency", "TEXT NOT NULL DEFAULT 'CNY'");
 ensureColumn("restaurants", "timezone", "TEXT NOT NULL DEFAULT 'Asia/Shanghai'");
 ensureColumn("restaurants", "language", "TEXT NOT NULL DEFAULT 'ar'");
 ensureColumn("restaurants", "business_type", "TEXT NOT NULL DEFAULT 'yemeni'");
+ensureColumn("orders", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("orders", "discount", "REAL NOT NULL DEFAULT 0");
+ensureColumn("orders", "commission", "REAL NOT NULL DEFAULT 0");
+ensureColumn("orders", "other_cost", "REAL NOT NULL DEFAULT 0");
+ensureColumn("orders", "source_key", "TEXT");
+ensureColumn("inventory", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("refunds", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("refunds", "source_key", "TEXT");
+ensureColumn("staff_shifts", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("chat_sessions", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("reports", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("answer_feedback", "owner_id", "INTEGER REFERENCES owners(id)");
+ensureColumn("knowledge_documents", "branch_id", "INTEGER REFERENCES branches(id)");
+ensureColumn("knowledge_chunks", "branch_id", "INTEGER REFERENCES branches(id)");
+
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_source_key ON orders(restaurant_id,branch_id,source_key) WHERE source_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_source_key ON refunds(restaurant_id,branch_id,source_key) WHERE source_key IS NOT NULL;
+`);
 
 function ensureAccessRecords() {
   const restaurants = db.prepare("SELECT id,name,owner_id,organization_id FROM restaurants").all();
@@ -58,6 +81,9 @@ function ensureAccessRecords() {
       insertBranch.run(organizationId, restaurant.id, `${restaurant.name} - Guangzhou`, "GZ-01", "Guangzhou", "10:00", "02:00");
       branch = db.prepare("SELECT id FROM branches WHERE restaurant_id=? ORDER BY id LIMIT 1").get(restaurant.id);
     }
+    ["orders", "inventory", "refunds", "staff_shifts", "chat_sessions", "reports", "knowledge_documents", "knowledge_chunks"].forEach((table) => {
+      db.prepare(`UPDATE ${table} SET branch_id=? WHERE restaurant_id=? AND branch_id IS NULL`).run(branch.id, restaurant.id);
+    });
     insertMembership.run(organizationId, restaurant.owner_id, "owner", null);
   });
 }
@@ -75,18 +101,18 @@ function seed() {
   ];
   const insertMenu = db.prepare("INSERT INTO menu_items(restaurant_id,name,price,cost) VALUES (?,?,?,?)");
   menu.forEach((m) => insertMenu.run(restaurant, ...m));
-  const insertInventory = db.prepare("INSERT INTO inventory(restaurant_id,item_name,quantity,threshold) VALUES (?,?,?,?)");
-  [["Salmon fillet", 8, 10], ["Burger buns", 42, 15], ["Tomatoes", 12, 10], ["Lobster", 4, 8], ["Coffee beans", 18, 6]].forEach((x) => insertInventory.run(restaurant, ...x));
-  const insertOrder = db.prepare("INSERT INTO orders(restaurant_id,items,total_price,cost,created_at) VALUES (?,?,?,?,?)");
+  const insertInventory = db.prepare("INSERT INTO inventory(restaurant_id,branch_id,item_name,quantity,threshold) VALUES (?,?,?,?,?)");
+  [["Salmon fillet", 8, 10], ["Burger buns", 42, 15], ["Tomatoes", 12, 10], ["Lobster", 4, 8], ["Coffee beans", 18, 6]].forEach((x) => insertInventory.run(restaurant, branch, ...x));
+  const insertOrder = db.prepare("INSERT INTO orders(restaurant_id,branch_id,items,total_price,cost,created_at) VALUES (?,?,?,?,?,?)");
   const now = new Date();
   for (let day = 0; day < 14; day++) {
     for (let i = 0; i < 18 + ((day * 7) % 13); i++) {
       const item = menu[(i + day) % menu.length];
       const qty = 1 + (i % 2);
       const d = new Date(now); d.setDate(now.getDate() - day); d.setHours(11 + (i % 11), (i * 13) % 60, 0, 0);
-      insertOrder.run(restaurant, JSON.stringify([{ name: item[0], quantity: qty, price: item[1], cost: item[2] }]), item[1] * qty, item[2] * qty, d.toISOString());
+      insertOrder.run(restaurant, branch, JSON.stringify([{ name: item[0], quantity: qty, price: item[1], cost: item[2] }]), item[1] * qty, item[2] * qty, d.toISOString());
     }
   }
 }
-seed();
+if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEMO_SEED === "true") seed();
 ensureAccessRecords();

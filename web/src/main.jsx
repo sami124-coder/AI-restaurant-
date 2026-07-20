@@ -39,6 +39,7 @@ const displayNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number.toLocaleString() : "-";
 };
+const money = (value, currency = "CNY") => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value) || 0);
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -77,8 +78,8 @@ class ErrorBoundary extends React.Component {
 
 function Login({ onLogin }) {
   const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("owner@harbor.test");
-  const [password, setPassword] = useState("demo1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [profile, setProfile] = useState({
     name: "Restaurant Owner",
     organizationName: "Sana'a Hospitality",
@@ -161,6 +162,7 @@ function DataPanel({ onClose, onImported }) {
   const [status, setStatus] = useState();
   const [busy, setBusy] = useState(false);
   const [counts, setCounts] = useState();
+  const [preview, setPreview] = useState();
 
   useEffect(() => { api("/data/status").then(setCounts).catch(() => {}); }, []);
 
@@ -170,8 +172,16 @@ function DataPanel({ onClose, onImported }) {
     setBusy(true);
     setStatus();
     try {
-      const result = await api("/data/import", { method: "POST", body: JSON.stringify({ type, csv: await file.text() }) });
+      const csv = await file.text();
+      if (!preview) {
+        const nextPreview = await api("/data/import/preview", { method: "POST", body: JSON.stringify({ type, csv }) });
+        setPreview({ ...nextPreview, csv });
+        setStatus({ ok: true, text: `Preview ready: ${nextPreview.rows} rows. Click confirm import to write live data.` });
+        return;
+      }
+      const result = await api("/data/import", { method: "POST", body: JSON.stringify({ type, csv: preview.csv, confirm: true }) });
       setStatus({ ok: true, text: `Imported ${result.imported} rows successfully.` });
+      setPreview();
       setCounts(await api("/data/status"));
       onImported();
     } catch (err) {
@@ -200,10 +210,11 @@ function DataPanel({ onClose, onImported }) {
               {Object.entries(importOptions).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
             </select>
           </label>
-          <label>CSV file<input type="file" accept=".csv,text/csv" onChange={(event) => setFile(event.target.files[0])}/></label>
+          <label>CSV file<input type="file" accept=".csv,text/csv" onChange={(event) => { setFile(event.target.files[0]); setPreview(); }}/></label>
           <small className="csv-help">Required columns are documented in the repository README.</small>
           {status && <div className={status.ok ? "import-success" : "import-error"}>{status.text}</div>}
-          <button className="import-button" disabled={!file || busy}><Upload/>{busy ? "Importing..." : "Import data"}</button>
+          {preview && <div className="import-success">Preview confirmed {preview.rows} rows. Duplicate orders/refunds will be skipped by source key or row fingerprint.</div>}
+          <button className="import-button" disabled={!file || busy}><Upload/>{busy ? "Working..." : preview ? "Confirm import" : "Preview CSV"}</button>
         </form>
       </section>
     </div>
@@ -402,8 +413,9 @@ function FeedbackCollector() {
 }
 
 function App() {
+  const initialMessages = [{ role: "assistant", content: "Good afternoon. I can summarize today, find menu profit leaks, or flag inventory risks. Where should we start?" }];
   const [ready, setReady] = useState(!!localStorage.getItem("token"));
-  const [messages, setMessages] = useState([{ role: "assistant", content: "Good afternoon. I can summarize today, find menu profit leaks, or flag inventory risks. Where should we start?" }]);
+  const [messages, setMessages] = useState(initialMessages);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState();
@@ -414,6 +426,7 @@ function App() {
   });
   const [showManage, setShowManage] = useState(false);
   const bottom = useRef();
+  const currency = stats?.currency || me?.organization?.currency || "CNY";
 
   const refreshContext = async () => {
     const context = await api("/auth/me");
@@ -425,6 +438,11 @@ function App() {
   useEffect(() => {
     if (ready) {
       Promise.all([api("/dashboard").then(setStats), refreshContext()]).catch(() => setReady(false));
+    } else {
+      setMessages(initialMessages);
+      setSessionId();
+      setStats();
+      setMe(null);
     }
   }, [ready]);
   useEffect(() => {
@@ -462,10 +480,10 @@ function App() {
         <div className="restaurant"><small>YOUR RESTAURANT</small><h2>{localStorage.getItem("restaurant")}</h2><i>● Data connected</i></div>
         <nav>
           <b>Today's decision brief</b>
-          <article><TrendingUp/><div><small>NET SALES</small><strong>${displayNumber(stats?.sales?.revenue)}</strong><p>{stats?.sales?.orders || 0} orders</p></div></article>
-          <article><CircleDollarSign/><div><small>EST. PROFIT</small><strong>${displayNumber(stats?.sales?.profit)}</strong><p>{stats?.sales?.margin_percent || 0}% margin</p></div></article>
+          <article><TrendingUp/><div><small>NET SALES</small><strong>{money(stats?.sales?.net_revenue ?? stats?.sales?.revenue, currency)}</strong><p>{stats?.sales?.orders || 0} orders</p></div></article>
+          <article><CircleDollarSign/><div><small>EST. PROFIT</small><strong>{money(stats?.sales?.profit, currency)}</strong><p>{stats?.sales?.margin_percent || 0}% margin</p></div></article>
           <article><Package/><div><small>STOCK RISKS</small><strong>{stats?.inventory?.low_stock_count ?? "-"}</strong><p>need attention</p></div></article>
-          <article><Utensils/><div><small>TOP DISH</small><strong className="dish">{stats?.topDishes?.[0]?.name || "-"}</strong><p>${displayNumber(stats?.topDishes?.[0]?.revenue)} revenue</p></div></article>
+          <article><Utensils/><div><small>TOP DISH</small><strong className="dish">{stats?.topDishes?.[0]?.name || "-"}</strong><p>{money(stats?.topDishes?.[0]?.revenue, currency)} revenue</p></div></article>
         </nav>
         <button className="manage-button" onClick={() => setShowManage(true)}><Building2 size={16}/> Manage branches & users</button>
         <div className="approval-note"><ShieldCheck/><div><b>Owner approval required</b><small>AI cannot change operations without you.</small></div></div>

@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import crypto from "node:crypto";
+import { db } from "./db.js";
 import { executeTool, toolDefinitions } from "./tools.js";
 
 export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert AI restaurant manager assistant. Your job is to answer like ChatGPT, but specialized for restaurants.
@@ -46,9 +48,17 @@ Safety rules:
 - Confirm the result of operational changes.
 - Never imply that a recommendation has been executed when it has not.`;
 
-const money = (value) => `$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const money = (value) => new Intl.NumberFormat(undefined, { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(Number(value) || 0);
 const mutatingTools = new Set(["flag_menu_item", "create_report"]);
 const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
+const normalizeScope = (scope) => typeof scope === "object" ? scope : { restaurantId: scope };
+
+function createPendingAction(call, scope) {
+  const actionHash = crypto.createHash("sha256").update(`${scope.restaurantId}:${scope.branchId || ""}:${scope.ownerId || ""}:${call.name}:${call.arguments}`).digest("hex").slice(0, 16);
+  db.prepare("INSERT OR IGNORE INTO pending_ai_actions(restaurant_id,branch_id,owner_id,tool_name,arguments,action_hash) VALUES (?,?,?,?,?,?)")
+    .run(scope.restaurantId, scope.branchId || null, scope.ownerId || 0, call.name, call.arguments, actionHash);
+  return { confirmation_required: true, action_hash: actionHash, tool_name: call.name, arguments: JSON.parse(call.arguments), message: `Owner confirmation required. Confirm exact action with code ${actionHash}.` };
+}
 
 function formatCapabilities() {
   return "Yes. I can speak Arabic and English.\n\nYou can ask in Arabic, for example:\n\n• كيف أداء المطعم اليوم؟\n• ما أكثر طبق يضر الربح؟\n• هل أحتاج موظفين إضافيين الليلة؟\n\nI will answer in the same language you use, and I will use restaurant data when the question needs numbers.";
@@ -324,18 +334,15 @@ async function createOpenAIResponse(client, request) {
   }
 }
 
-export async function getAssistantReply(messages, restaurantId) {
+export async function getAssistantReply(messages, scope) {
+  const context = normalizeScope(scope);
   if (!process.env.OPENAI_API_KEY) {
     const question = messages.at(-1).content;
-    return { content: demoReply(question, restaurantId), toolsUsed: inferTools(question) };
+    return { content: demoReply(question, context), toolsUsed: inferTools(question) };
   }
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let input = messages.map(({ role, content }) => ({ role, content }));
   const toolsUsed = [];
-  const lastUser = [...messages].reverse().find((message) => message.role === "user")?.content.trim().toLowerCase() || "";
-  const previousAssistant = [...messages].reverse().find((message) => message.role === "assistant")?.content.toLowerCase() || "";
-  const ownerConfirmed = /^(yes|confirm|confirmed|do it|proceed|go ahead|نعم|أوافق|موافق|نفذ|نفّذ)[.! ]*$/.test(lastUser) && /(confirm|deactivat|activat|change|تأكيد|إيقاف|تفعيل|تغيير)/.test(previousAssistant);
-  const blockedThisRequest = new Set();
   const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
   const reasoningEffort = process.env.OPENAI_REASONING_EFFORT || "high";
   const textVerbosity = process.env.OPENAI_TEXT_VERBOSITY || "high";
@@ -356,12 +363,10 @@ export async function getAssistantReply(messages, restaurantId) {
     for (const call of calls) {
       toolsUsed.push(call.name);
       let output;
-      const actionKey = `${call.name}:${call.arguments}`;
-      if (mutatingTools.has(call.name) && (!ownerConfirmed || blockedThisRequest.has(actionKey))) {
-        blockedThisRequest.add(actionKey);
-        output = { confirmation_required: true, message: "Ask the owner to confirm this exact change. Do not call the tool again in this response." };
+      if (mutatingTools.has(call.name)) {
+        output = createPendingAction(call, context);
       }
-      else try { output = executeTool(call.name, JSON.parse(call.arguments), restaurantId); }
+      else try { output = executeTool(call.name, JSON.parse(call.arguments), context); }
       catch (error) { output = { error: error.message }; }
       input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
     }
