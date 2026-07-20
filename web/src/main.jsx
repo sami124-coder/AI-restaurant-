@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bot, Send, Sparkles, TrendingUp, Package, Utensils, LogOut, ShieldCheck,
-  CircleDollarSign, Database, Upload, X, ThumbsUp, ThumbsDown, Check
+  CircleDollarSign, Database, Upload, X, ThumbsUp, ThumbsDown, Check,
+  Building2, Users, Plus
 } from "lucide-react";
 import "./styles.css";
 import "./decision.css";
@@ -75,16 +76,30 @@ class ErrorBoundary extends React.Component {
 }
 
 function Login({ onLogin }) {
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("owner@harbor.test");
   const [password, setPassword] = useState("demo1234");
+  const [profile, setProfile] = useState({
+    name: "Restaurant Owner",
+    organizationName: "Sana'a Hospitality",
+    restaurantName: "مطعم صنعاء",
+    branchName: "Guangzhou Main",
+    branchCode: "GZ-01",
+    city: "Guangzhou"
+  });
   const [error, setError] = useState("");
 
   const submit = async (event) => {
     event.preventDefault();
+    setError("");
     try {
-      const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const body = mode === "login"
+        ? { email, password }
+        : { ...profile, email, password };
+      const data = await api(mode === "login" ? "/auth/login" : "/auth/register", { method: "POST", body: JSON.stringify(body) });
       localStorage.setItem("token", data.token);
       localStorage.setItem("restaurant", data.restaurant.name);
+      localStorage.setItem("me", JSON.stringify(data));
       window.dispatchEvent(new Event("auth-change"));
       onLogin();
     } catch (err) {
@@ -100,10 +115,27 @@ function Login({ onLogin }) {
         <p>The AI decision layer for restaurant owners - ask, understand, then approve.</p>
         <div className="superpowers"><span>Daily summary</span><span>Menu profit</span><span>Stock warnings</span></div>
         <form onSubmit={submit}>
+          <div className="auth-tabs">
+            <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Login</button>
+            <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Create restaurant</button>
+          </div>
+          {mode === "register" && (
+            <>
+              <label>Your name<input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label>
+              <label>Organization<input value={profile.organizationName} onChange={(event) => setProfile({ ...profile, organizationName: event.target.value })} /></label>
+              <label>Restaurant<input value={profile.restaurantName} onChange={(event) => setProfile({ ...profile, restaurantName: event.target.value })} /></label>
+              <div className="form-grid">
+                <label>First branch<input value={profile.branchName} onChange={(event) => setProfile({ ...profile, branchName: event.target.value })} /></label>
+                <label>Code<input value={profile.branchCode} onChange={(event) => setProfile({ ...profile, branchCode: event.target.value })} /></label>
+              </div>
+              <label>City<input value={profile.city} onChange={(event) => setProfile({ ...profile, city: event.target.value })} /></label>
+              <small className="quiet-note">Defaults: CNY, Asia/Shanghai, Arabic, operating day 10:00-02:00.</small>
+            </>
+          )}
           <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           {error && <small>{error}</small>}
-          <button>Open decision center</button>
+          <button>{mode === "login" ? "Open decision center" : "Create organization"}</button>
         </form>
       </section>
       <aside>
@@ -178,6 +210,135 @@ function DataPanel({ onClose, onImported }) {
   );
 }
 
+function ManagementPanel({ onClose, me, onUpdated }) {
+  const [branches, setBranches] = useState(me?.branches || []);
+  const [users, setUsers] = useState([]);
+  const [branch, setBranch] = useState({
+    name: "",
+    code: "",
+    city: "Guangzhou",
+    operatingDayStart: "10:00",
+    operatingDayEnd: "02:00"
+  });
+  const [invite, setInvite] = useState({ email: "", name: "", role: "viewer", branchId: "" });
+  const [status, setStatus] = useState("");
+  const owner = me?.user?.role === "owner";
+
+  const load = async () => {
+    const nextBranches = await api("/branches");
+    setBranches(nextBranches);
+    if (owner) setUsers(await api("/users"));
+  };
+
+  useEffect(() => { load().catch((err) => setStatus(err.message)); }, []);
+
+  const createBranch = async (event) => {
+    event.preventDefault();
+    setStatus("");
+    try {
+      await api("/branches", { method: "POST", body: JSON.stringify(branch) });
+      setBranch({ name: "", code: "", city: "Guangzhou", operatingDayStart: "10:00", operatingDayEnd: "02:00" });
+      await load();
+      onUpdated?.();
+      setStatus("Branch created.");
+    } catch (err) {
+      setStatus(err.message);
+    }
+  };
+
+  const inviteUser = async (event) => {
+    event.preventDefault();
+    setStatus("");
+    try {
+      const payload = {
+        ...invite,
+        branchId: invite.role === "branch_manager" ? Number(invite.branchId) : undefined
+      };
+      const result = await api("/users/invite", { method: "POST", body: JSON.stringify(payload) });
+      setInvite({ email: "", name: "", role: "viewer", branchId: "" });
+      await load();
+      setStatus(`User invited. Temporary password: ${result.temporaryPassword}`);
+    } catch (err) {
+      setStatus(err.message);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <section className="data-panel management-panel">
+        <header>
+          <div><small>ORGANIZATION SETUP</small><h2>{me?.organization?.name || "Restaurant access"}</h2></div>
+          <button onClick={onClose} aria-label="Close"><X/></button>
+        </header>
+        <p>Currency is {me?.organization?.currency || "CNY"}, timezone is {me?.organization?.timezone || "Asia/Shanghai"}. Branch managers only see their assigned branch.</p>
+        <div className="connection-grid">
+          {branches.map((item) => (
+            <article key={item.id}>
+              <Building2/>
+              <div>
+                <b>{item.name}</b>
+                <small>{item.code} - {item.city} - operating day {item.operating_day_start}-{item.operating_day_end}</small>
+              </div>
+            </article>
+          ))}
+        </div>
+        {owner ? (
+          <div className="management-grid">
+            <form onSubmit={createBranch}>
+              <h3><Plus/> Add branch</h3>
+              <label>Branch name<input value={branch.name} onChange={(event) => setBranch({ ...branch, name: event.target.value })} required /></label>
+              <div className="form-grid">
+                <label>Code<input value={branch.code} onChange={(event) => setBranch({ ...branch, code: event.target.value })} required /></label>
+                <label>City<input value={branch.city} onChange={(event) => setBranch({ ...branch, city: event.target.value })} required /></label>
+              </div>
+              <div className="form-grid">
+                <label>Day start<input type="time" value={branch.operatingDayStart} onChange={(event) => setBranch({ ...branch, operatingDayStart: event.target.value })} /></label>
+                <label>Day end<input type="time" value={branch.operatingDayEnd} onChange={(event) => setBranch({ ...branch, operatingDayEnd: event.target.value })} /></label>
+              </div>
+              <button className="import-button"><Building2/> Create branch</button>
+            </form>
+            <form onSubmit={inviteUser}>
+              <h3><Users/> Invite user</h3>
+              <label>Name<input value={invite.name} onChange={(event) => setInvite({ ...invite, name: event.target.value })} /></label>
+              <label>Email<input type="email" value={invite.email} onChange={(event) => setInvite({ ...invite, email: event.target.value })} required /></label>
+              <div className="form-grid">
+                <label>Role
+                  <select value={invite.role} onChange={(event) => setInvite({ ...invite, role: event.target.value })}>
+                    <option value="viewer">Viewer</option>
+                    <option value="branch_manager">Branch manager</option>
+                  </select>
+                </label>
+                <label>Branch
+                  <select value={invite.branchId} onChange={(event) => setInvite({ ...invite, branchId: event.target.value })} disabled={invite.role !== "branch_manager"}>
+                    <option value="">Select branch</option>
+                    {branches.map((item) => <option value={item.id} key={item.id}>{item.code} - {item.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <button className="import-button"><Users/> Invite user</button>
+            </form>
+          </div>
+        ) : (
+          <div className="import-success">Your role is {me?.user?.role}. You can view your assigned branch, but only owners can add branches or users.</div>
+        )}
+        {owner && (
+          <div className="user-table">
+            <h3>Team access</h3>
+            {users.map((user) => (
+              <div key={user.id}>
+                <span>{user.name || user.email}<small>{user.email}</small></span>
+                <b>{user.role}</b>
+                <em>{user.branch_name || "All branches"}</em>
+              </div>
+            ))}
+          </div>
+        )}
+        {status && <div className={/created|invited/i.test(status) ? "import-success" : "import-error"}>{status}</div>}
+      </section>
+    </div>
+  );
+}
+
 function FeedbackCollector() {
   const [answer, setAnswer] = useState();
   const [correcting, setCorrecting] = useState(false);
@@ -247,9 +408,25 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState();
   const [stats, setStats] = useState();
+  const [me, setMe] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("me") || "null"); }
+    catch { return null; }
+  });
+  const [showManage, setShowManage] = useState(false);
   const bottom = useRef();
 
-  useEffect(() => { if (ready) api("/dashboard").then(setStats).catch(() => setReady(false)); }, [ready]);
+  const refreshContext = async () => {
+    const context = await api("/auth/me");
+    setMe(context);
+    localStorage.setItem("me", JSON.stringify(context));
+    localStorage.setItem("restaurant", context.restaurant.name);
+  };
+
+  useEffect(() => {
+    if (ready) {
+      Promise.all([api("/dashboard").then(setStats), refreshContext()]).catch(() => setReady(false));
+    }
+  }, [ready]);
   useEffect(() => {
     const node = bottom.current;
     if (node && typeof node.scrollIntoView === "function") node.scrollIntoView();
@@ -279,6 +456,7 @@ function App() {
 
   return (
     <div className="shell">
+      {showManage && <ErrorBoundary><ManagementPanel me={me} onClose={() => setShowManage(false)} onUpdated={refreshContext}/></ErrorBoundary>}
       <aside className="sidebar">
         <div className="brand"><span><Bot /></span><b>Decision AI</b></div>
         <div className="restaurant"><small>YOUR RESTAURANT</small><h2>{localStorage.getItem("restaurant")}</h2><i>● Data connected</i></div>
@@ -289,6 +467,7 @@ function App() {
           <article><Package/><div><small>STOCK RISKS</small><strong>{stats?.inventory?.low_stock_count ?? "-"}</strong><p>need attention</p></div></article>
           <article><Utensils/><div><small>TOP DISH</small><strong className="dish">{stats?.topDishes?.[0]?.name || "-"}</strong><p>${displayNumber(stats?.topDishes?.[0]?.revenue)} revenue</p></div></article>
         </nav>
+        <button className="manage-button" onClick={() => setShowManage(true)}><Building2 size={16}/> Manage branches & users</button>
         <div className="approval-note"><ShieldCheck/><div><b>Owner approval required</b><small>AI cannot change operations without you.</small></div></div>
         <button className="logout" onClick={() => { localStorage.clear(); window.dispatchEvent(new Event("auth-change")); setReady(false); }}><LogOut size={16}/> Sign out</button>
       </aside>

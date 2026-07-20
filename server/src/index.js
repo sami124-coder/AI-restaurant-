@@ -19,33 +19,224 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
 app.use(express.json({ limit: "3mb" }));
 const secret = process.env.JWT_SECRET || "development-only-secret";
 
+const roleRank = { viewer: 1, branch_manager: 2, owner: 3 };
+const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM time.");
+
+function getAuthContext(ownerId) {
+  const membership = db.prepare(`
+    SELECT u.id owner_id,u.email,u.name,ou.role,ou.branch_id,o.id organization_id,o.name organization_name,o.currency,o.timezone,o.language,r.id restaurant_id,r.name restaurant_name
+    FROM organization_users ou
+    JOIN owners u ON u.id=ou.owner_id
+    JOIN organizations o ON o.id=ou.organization_id
+    JOIN restaurants r ON r.organization_id=o.id
+    WHERE u.id=?
+    ORDER BY ou.id
+    LIMIT 1
+  `).get(ownerId);
+  if (membership) return membership;
+  const legacy = db.prepare("SELECT o.id owner_id,o.email,o.name,r.id restaurant_id,r.name restaurant_name,r.organization_id FROM owners o JOIN restaurants r ON r.owner_id=o.id WHERE o.id=? LIMIT 1").get(ownerId);
+  if (!legacy) return null;
+  return { ...legacy, role: "owner", branch_id: null, organization_id: legacy.organization_id, organization_name: legacy.restaurant_name, currency: "CNY", timezone: "Asia/Shanghai", language: "ar" };
+}
+
+function signContext(context) {
+  return jwt.sign({ ownerId: context.owner_id, restaurantId: context.restaurant_id, organizationId: context.organization_id, role: context.role }, secret, { expiresIn: "12h" });
+}
+
 function auth(req, res, next) {
-  try { req.user = jwt.verify((req.headers.authorization || "").replace("Bearer ", ""), secret); next(); }
+  try {
+    const token = jwt.verify((req.headers.authorization || "").replace("Bearer ", ""), secret);
+    const context = getAuthContext(token.ownerId);
+    if (!context) return res.status(401).json({ error: "Authentication required" });
+    req.user = context;
+    next();
+  }
   catch { res.status(401).json({ error: "Authentication required" }); }
 }
+const requireRole = (role) => (req, res, next) => {
+  if (roleRank[req.user.role] < roleRank[role]) return res.status(403).json({ error: "Permission denied" });
+  next();
+};
+
+function assertBranchAccess(req, branchId) {
+  const branch = db.prepare("SELECT * FROM branches WHERE id=? AND organization_id=? AND restaurant_id=?").get(branchId, req.user.organization_id, req.user.restaurant_id);
+  if (!branch) return null;
+  if (req.user.role === "branch_manager" && req.user.branch_id !== branch.id) return null;
+  return branch;
+}
+
+function serializeMe(user) {
+  const branches = db.prepare(`
+    SELECT id,name,code,city,address,phone,pos_system,operating_day_start,operating_day_end
+    FROM branches
+    WHERE organization_id=? AND restaurant_id=?
+      AND (? <> 'branch_manager' OR id=?)
+    ORDER BY code
+  `).all(user.organization_id, user.restaurant_id, user.role, user.branch_id);
+  return {
+    user: { id: user.owner_id, email: user.email, name: user.name, role: user.role },
+    organization: { id: user.organization_id, name: user.organization_name, currency: user.currency, timezone: user.timezone, language: user.language },
+    restaurant: { id: user.restaurant_id, name: user.restaurant_name },
+    branches
+  };
+}
 app.get("/api/health", (_, res) => res.json({ status: "ok", ai: process.env.OPENAI_API_KEY ? "openai" : "demo" }));
+app.post("/api/auth/register", (req, res, next) => {
+  try {
+    const parsed = z.object({
+      name: z.string().trim().min(1).max(120),
+      email: z.string().email(),
+      password: z.string().min(8).max(200),
+      organizationName: z.string().trim().min(1).max(160),
+      restaurantName: z.string().trim().min(1).max(160),
+      branchName: z.string().trim().min(1).max(160),
+      branchCode: z.string().trim().min(1).max(40).default("GZ-01"),
+      city: z.string().trim().min(1).max(120).default("Guangzhou"),
+      currency: z.string().trim().length(3).default("CNY"),
+      timezone: z.string().trim().min(1).max(80).default("Asia/Shanghai"),
+      language: z.string().trim().min(2).max(10).default("ar"),
+      operatingDayStart: timeSchema.default("10:00"),
+      operatingDayEnd: timeSchema.default("02:00")
+    }).parse(req.body);
+    const result = db.transaction(() => {
+      if (db.prepare("SELECT id FROM owners WHERE lower(email)=lower(?)").get(parsed.email)) throw new Error("Email is already registered.");
+      const ownerId = Number(db.prepare("INSERT INTO owners(email,password_hash,name) VALUES (?,?,?)").run(parsed.email, bcrypt.hashSync(parsed.password, 10), parsed.name).lastInsertRowid);
+      const organizationId = Number(db.prepare("INSERT INTO organizations(name,currency,timezone,language) VALUES (?,?,?,?)").run(parsed.organizationName, parsed.currency.toUpperCase(), parsed.timezone, parsed.language).lastInsertRowid);
+      const restaurantId = Number(db.prepare("INSERT INTO restaurants(name,owner_id,organization_id,currency,timezone,language,business_type) VALUES (?,?,?,?,?,?,?)").run(parsed.restaurantName, ownerId, organizationId, parsed.currency.toUpperCase(), parsed.timezone, parsed.language, "yemeni").lastInsertRowid);
+      const branchId = Number(db.prepare("INSERT INTO branches(organization_id,restaurant_id,name,code,city,operating_day_start,operating_day_end) VALUES (?,?,?,?,?,?,?)").run(organizationId, restaurantId, parsed.branchName, parsed.branchCode, parsed.city, parsed.operatingDayStart, parsed.operatingDayEnd).lastInsertRowid);
+      db.prepare("INSERT INTO organization_users(organization_id,owner_id,role,branch_id) VALUES (?,?,?,?)").run(organizationId, ownerId, "owner", null);
+      return getAuthContext(ownerId);
+    })();
+    res.status(201).json({ token: signContext(result), ...serializeMe(result) });
+  } catch (error) { next(error); }
+});
 app.post("/api/auth/login", (req, res) => {
   const parsed = z.object({ email: z.string().email(), password: z.string().min(8) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Valid email and password are required" });
   const owner = db.prepare("SELECT * FROM owners WHERE email=?").get(parsed.data.email);
   if (!owner || !bcrypt.compareSync(parsed.data.password, owner.password_hash)) return res.status(401).json({ error: "Invalid credentials" });
-  const restaurant = db.prepare("SELECT id,name FROM restaurants WHERE owner_id=?").get(owner.id);
-  res.json({ token: jwt.sign({ ownerId: owner.id, restaurantId: restaurant.id }, secret, { expiresIn: "12h" }), restaurant });
+  const context = getAuthContext(owner.id);
+  res.json({ token: signContext(context), restaurant: { id: context.restaurant_id, name: context.restaurant_name }, ...serializeMe(context) });
+});
+app.post("/api/auth/logout", (_req, res) => res.json({ ok: true }));
+app.get("/api/auth/me", auth, (req, res) => res.json(serializeMe(req.user)));
+app.post("/api/organizations", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const parsed = z.object({ name: z.string().trim().min(1).max(160), currency: z.string().trim().length(3).default("CNY"), timezone: z.string().trim().min(1).max(80).default("Asia/Shanghai"), language: z.string().trim().min(2).max(10).default("ar") }).parse(req.body);
+    const id = Number(db.prepare("INSERT INTO organizations(name,currency,timezone,language) VALUES (?,?,?,?)").run(parsed.name, parsed.currency.toUpperCase(), parsed.timezone, parsed.language).lastInsertRowid);
+    db.prepare("INSERT INTO organization_users(organization_id,owner_id,role,branch_id) VALUES (?,?,?,?)").run(id, req.user.owner_id, "owner", null);
+    res.status(201).json(db.prepare("SELECT * FROM organizations WHERE id=?").get(id));
+  } catch (error) { next(error); }
+});
+app.get("/api/organizations/current", auth, (req, res) => res.json({ id: req.user.organization_id, name: req.user.organization_name, currency: req.user.currency, timezone: req.user.timezone, language: req.user.language }));
+app.post("/api/restaurants", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const parsed = z.object({ name: z.string().trim().min(1).max(160), businessType: z.string().trim().min(1).max(80).default("yemeni") }).parse(req.body);
+    const id = Number(db.prepare("INSERT INTO restaurants(name,owner_id,organization_id,currency,timezone,language,business_type) VALUES (?,?,?,?,?,?,?)").run(parsed.name, req.user.owner_id, req.user.organization_id, req.user.currency, req.user.timezone, req.user.language, parsed.businessType).lastInsertRowid);
+    res.status(201).json(db.prepare("SELECT id,name,currency,timezone,language,business_type FROM restaurants WHERE id=?").get(id));
+  } catch (error) { next(error); }
+});
+app.get("/api/restaurants/current", auth, (req, res) => res.json({ id: req.user.restaurant_id, name: req.user.restaurant_name, currency: req.user.currency, timezone: req.user.timezone, language: req.user.language }));
+app.post("/api/branches", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const parsed = z.object({
+      name: z.string().trim().min(1).max(160),
+      code: z.string().trim().min(1).max(40),
+      city: z.string().trim().min(1).max(120),
+      address: z.string().trim().max(240).optional(),
+      phone: z.string().trim().max(80).optional(),
+      posSystem: z.string().trim().max(120).optional(),
+      operatingDayStart: timeSchema.default("10:00"),
+      operatingDayEnd: timeSchema.default("02:00")
+    }).parse(req.body);
+    const id = Number(db.prepare("INSERT INTO branches(organization_id,restaurant_id,name,code,city,address,phone,pos_system,operating_day_start,operating_day_end) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(req.user.organization_id, req.user.restaurant_id, parsed.name, parsed.code, parsed.city, parsed.address || null, parsed.phone || null, parsed.posSystem || null, parsed.operatingDayStart, parsed.operatingDayEnd).lastInsertRowid);
+    res.status(201).json(db.prepare("SELECT * FROM branches WHERE id=?").get(id));
+  } catch (error) { next(error); }
+});
+app.get("/api/branches", auth, (req, res) => {
+  res.json(db.prepare(`
+    SELECT id,name,code,city,address,phone,pos_system,operating_day_start,operating_day_end
+    FROM branches
+    WHERE organization_id=? AND restaurant_id=? AND (? <> 'branch_manager' OR id=?)
+    ORDER BY code
+  `).all(req.user.organization_id, req.user.restaurant_id, req.user.role, req.user.branch_id));
+});
+app.patch("/api/branches/:id", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const branchId = Number(req.params.id);
+    if (!assertBranchAccess(req, branchId)) return res.status(404).json({ error: "Branch not found" });
+    const parsed = z.object({
+      name: z.string().trim().min(1).max(160).optional(),
+      code: z.string().trim().min(1).max(40).optional(),
+      city: z.string().trim().min(1).max(120).optional(),
+      address: z.string().trim().max(240).nullable().optional(),
+      phone: z.string().trim().max(80).nullable().optional(),
+      posSystem: z.string().trim().max(120).nullable().optional(),
+      operatingDayStart: timeSchema.optional(),
+      operatingDayEnd: timeSchema.optional()
+    }).parse(req.body);
+    const current = db.prepare("SELECT * FROM branches WHERE id=?").get(branchId);
+    db.prepare("UPDATE branches SET name=?,code=?,city=?,address=?,phone=?,pos_system=?,operating_day_start=?,operating_day_end=? WHERE id=?")
+      .run(parsed.name ?? current.name, parsed.code ?? current.code, parsed.city ?? current.city, parsed.address ?? current.address, parsed.phone ?? current.phone, parsed.posSystem ?? current.pos_system, parsed.operatingDayStart ?? current.operating_day_start, parsed.operatingDayEnd ?? current.operating_day_end, branchId);
+    res.json(db.prepare("SELECT * FROM branches WHERE id=?").get(branchId));
+  } catch (error) { next(error); }
+});
+app.post("/api/users/invite", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const parsed = z.object({ email: z.string().email(), name: z.string().trim().max(120).optional(), role: z.enum(["branch_manager", "viewer"]), branchId: z.number().int().positive().optional() }).parse(req.body);
+    if (parsed.role === "branch_manager" && !parsed.branchId) return res.status(400).json({ error: "Branch manager requires a branch." });
+    if (parsed.branchId && !assertBranchAccess(req, parsed.branchId)) return res.status(404).json({ error: "Branch not found" });
+    const result = db.transaction(() => {
+      let user = db.prepare("SELECT id,email,name FROM owners WHERE lower(email)=lower(?)").get(parsed.email);
+      const temporaryPassword = "ChangeMe123!";
+      if (!user) {
+        const id = Number(db.prepare("INSERT INTO owners(email,password_hash,name) VALUES (?,?,?)").run(parsed.email, bcrypt.hashSync(temporaryPassword, 10), parsed.name || parsed.email.split("@")[0]).lastInsertRowid);
+        user = db.prepare("SELECT id,email,name FROM owners WHERE id=?").get(id);
+      }
+      db.prepare("INSERT INTO organization_users(organization_id,owner_id,role,branch_id) VALUES (?,?,?,?) ON CONFLICT(organization_id,owner_id) DO UPDATE SET role=excluded.role,branch_id=excluded.branch_id")
+        .run(req.user.organization_id, user.id, parsed.role, parsed.branchId || null);
+      return { user, temporaryPassword };
+    })();
+    res.status(201).json({ id: result.user.id, email: result.user.email, name: result.user.name, role: parsed.role, branch_id: parsed.branchId || null, temporaryPassword: result.temporaryPassword });
+  } catch (error) { next(error); }
+});
+app.get("/api/users", auth, requireRole("owner"), (req, res) => {
+  res.json(db.prepare(`
+    SELECT u.id,u.email,u.name,ou.role,ou.branch_id,b.name branch_name
+    FROM organization_users ou
+    JOIN owners u ON u.id=ou.owner_id
+    LEFT JOIN branches b ON b.id=ou.branch_id
+    WHERE ou.organization_id=?
+    ORDER BY ou.role,u.email
+  `).all(req.user.organization_id));
+});
+app.patch("/api/users/:id/role", auth, requireRole("owner"), (req, res, next) => {
+  try {
+    const ownerId = Number(req.params.id);
+    const parsed = z.object({ role: z.enum(["owner", "branch_manager", "viewer"]), branchId: z.number().int().positive().nullable().optional() }).parse(req.body);
+    if (parsed.role === "branch_manager" && !parsed.branchId) return res.status(400).json({ error: "Branch manager requires a branch." });
+    if (parsed.branchId && !assertBranchAccess(req, parsed.branchId)) return res.status(404).json({ error: "Branch not found" });
+    const membership = db.prepare("SELECT id FROM organization_users WHERE organization_id=? AND owner_id=?").get(req.user.organization_id, ownerId);
+    if (!membership) return res.status(404).json({ error: "User not found" });
+    db.prepare("UPDATE organization_users SET role=?,branch_id=? WHERE id=?").run(parsed.role, parsed.role === "branch_manager" ? parsed.branchId : null, membership.id);
+    res.json({ updated: true });
+  } catch (error) { next(error); }
 });
 app.get("/api/dashboard", auth, (req, res) => {
-  res.json({ sales: executeTool("get_daily_sales", {}, req.user.restaurantId), inventory: executeTool("get_inventory_status", {}, req.user.restaurantId), topDishes: executeTool("get_top_dishes", {}, req.user.restaurantId).slice(0, 3) });
+  res.json({ sales: executeTool("get_daily_sales", {}, req.user.restaurant_id), inventory: executeTool("get_inventory_status", {}, req.user.restaurant_id), topDishes: executeTool("get_top_dishes", {}, req.user.restaurant_id).slice(0, 3) });
 });
-app.get("/api/data/status", auth, (req, res) => res.json(dataConnectionStatus(req.user.restaurantId)));
+app.get("/api/data/status", auth, (req, res) => res.json(dataConnectionStatus(req.user.restaurant_id)));
 app.post("/api/data/import", auth, (req, res, next) => {
   try {
     const parsed = z.object({
       type: z.enum(["orders", "refunds", "menu_items", "inventory", "staff_shifts"]),
       csv: z.string().min(1).max(2_500_000)
     }).parse(req.body);
-    res.status(201).json(importRestaurantData(parsed.type, parsed.csv, req.user.restaurantId));
+    res.status(201).json(importRestaurantData(parsed.type, parsed.csv, req.user.restaurant_id));
   } catch (error) { next(error); }
 });
-app.get("/api/knowledge/status", auth, (req, res) => res.json(knowledgeStatus(req.user.restaurantId)));
+app.get("/api/knowledge/status", auth, (req, res) => res.json(knowledgeStatus(req.user.restaurant_id)));
 app.post("/api/knowledge/import", auth, (req, res, next) => {
   try {
     const parsed = z.object({
@@ -53,17 +244,17 @@ app.post("/api/knowledge/import", auth, (req, res, next) => {
       source: z.string().trim().max(500).optional(),
       content: z.string().trim().min(1).max(2_500_000)
     }).parse(req.body);
-    res.status(201).json(importKnowledgeDocument(parsed, req.user.restaurantId));
+    res.status(201).json(importKnowledgeDocument(parsed, req.user.restaurant_id));
   } catch (error) { next(error); }
 });
 app.get("/api/knowledge/search", auth, (req, res) => {
   const query = String(req.query.q || "").trim();
   if (!query) return res.status(400).json({ error: "Search query is required." });
-  res.json(searchKnowledgeBase(query, req.user.restaurantId));
+  res.json(searchKnowledgeBase(query, req.user.restaurant_id));
 });
-app.get("/api/chat/sessions", auth, (req, res) => res.json(db.prepare("SELECT * FROM chat_sessions WHERE restaurant_id=? ORDER BY created_at DESC").all(req.user.restaurantId)));
+app.get("/api/chat/sessions", auth, (req, res) => res.json(db.prepare("SELECT * FROM chat_sessions WHERE restaurant_id=? ORDER BY created_at DESC").all(req.user.restaurant_id)));
 app.get("/api/chat/sessions/:id/messages", auth, (req, res) => {
-  const session = db.prepare("SELECT id FROM chat_sessions WHERE id=? AND restaurant_id=?").get(req.params.id, req.user.restaurantId);
+  const session = db.prepare("SELECT id FROM chat_sessions WHERE id=? AND restaurant_id=?").get(req.params.id, req.user.restaurant_id);
   if (!session) return res.status(404).json({ error: "Session not found" });
   res.json(db.prepare("SELECT role,content,timestamp FROM chat_messages WHERE session_id=? ORDER BY id").all(session.id));
 });
@@ -71,11 +262,11 @@ app.post("/api/chat", auth, async (req, res, next) => {
   try {
     const parsed = z.object({ message: z.string().trim().min(1).max(4000), sessionId: z.number().int().positive().optional() }).parse(req.body);
     let sessionId = parsed.sessionId;
-    if (sessionId && !db.prepare("SELECT id FROM chat_sessions WHERE id=? AND restaurant_id=?").get(sessionId, req.user.restaurantId)) return res.status(404).json({ error: "Session not found" });
-    if (!sessionId) sessionId = Number(db.prepare("INSERT INTO chat_sessions(restaurant_id,title) VALUES (?,?)").run(req.user.restaurantId, parsed.message.slice(0, 48)).lastInsertRowid);
+    if (sessionId && !db.prepare("SELECT id FROM chat_sessions WHERE id=? AND restaurant_id=?").get(sessionId, req.user.restaurant_id)) return res.status(404).json({ error: "Session not found" });
+    if (!sessionId) sessionId = Number(db.prepare("INSERT INTO chat_sessions(restaurant_id,title) VALUES (?,?)").run(req.user.restaurant_id, parsed.message.slice(0, 48)).lastInsertRowid);
     db.prepare("INSERT INTO chat_messages(session_id,role,content) VALUES (?,'user',?)").run(sessionId, parsed.message);
     const history = db.prepare("SELECT role,content FROM chat_messages WHERE session_id=? ORDER BY id DESC LIMIT 20").all(sessionId).reverse();
-    const result = await getAssistantReply(history, req.user.restaurantId);
+    const result = await getAssistantReply(history, req.user.restaurant_id);
     const messageId = Number(db.prepare("INSERT INTO chat_messages(session_id,role,content) VALUES (?,'assistant',?)").run(sessionId, result.content).lastInsertRowid);
     res.json({ sessionId, message: { id: messageId, role: "assistant", content: result.content, toolsUsed: result.toolsUsed } });
   } catch (error) { next(error); }
@@ -92,17 +283,17 @@ app.post("/api/feedback", auth, (req, res, next) => {
       correctTools: z.array(z.string().min(1).max(80)).max(12).default([])
     }).parse(req.body);
     if (parsed.rating === "needs_correction" && !parsed.correctedAnswer) return res.status(400).json({ error: "Please provide the corrected answer." });
-    const message = db.prepare("SELECT m.id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=? AND m.session_id=? AND m.role='assistant' AND s.restaurant_id=?").get(parsed.messageId, parsed.sessionId, req.user.restaurantId);
+    const message = db.prepare("SELECT m.id FROM chat_messages m JOIN chat_sessions s ON s.id=m.session_id WHERE m.id=? AND m.session_id=? AND m.role='assistant' AND s.restaurant_id=?").get(parsed.messageId, parsed.sessionId, req.user.restaurant_id);
     if (!message) return res.status(404).json({ error: "Assistant message not found." });
     db.prepare(`INSERT INTO answer_feedback(restaurant_id,session_id,message_id,question,original_answer,rating,corrected_answer,correct_tools)
       VALUES (?,?,?,?,?,?,?,?)
       ON CONFLICT(restaurant_id,message_id) DO UPDATE SET question=excluded.question,original_answer=excluded.original_answer,rating=excluded.rating,corrected_answer=excluded.corrected_answer,correct_tools=excluded.correct_tools,created_at=CURRENT_TIMESTAMP`)
-      .run(req.user.restaurantId, parsed.sessionId, parsed.messageId, parsed.question, parsed.originalAnswer, parsed.rating, parsed.correctedAnswer || null, JSON.stringify(parsed.correctTools));
+      .run(req.user.restaurant_id, parsed.sessionId, parsed.messageId, parsed.question, parsed.originalAnswer, parsed.rating, parsed.correctedAnswer || null, JSON.stringify(parsed.correctTools));
     res.status(201).json({ saved: true });
   } catch (error) { next(error); }
 });
 app.get("/api/training/export", auth, (req, res) => {
-  const rows = db.prepare("SELECT question,original_answer,rating,corrected_answer,correct_tools,created_at FROM answer_feedback WHERE restaurant_id=? ORDER BY id").all(req.user.restaurantId);
+  const rows = db.prepare("SELECT question,original_answer,rating,corrected_answer,correct_tools,created_at FROM answer_feedback WHERE restaurant_id=? ORDER BY id").all(req.user.restaurant_id);
   res.json(rows.map((row) => ({
     question: row.question,
     correct_tools: JSON.parse(row.correct_tools),
@@ -120,5 +311,14 @@ if (process.env.NODE_ENV === "production") {
     res.sendFile(path.join(webDist, "index.html"));
   });
 }
-app.use((error, _req, res, _next) => { console.error(error); res.status(error.name === "ZodError" ? 400 : 500).json({ error: error.name === "ZodError" ? "Invalid request" : "Unable to complete request" }); });
-app.listen(process.env.PORT || 4000, () => console.log(`API listening on http://localhost:${process.env.PORT || 4000}`));
+app.use((error, _req, res, _next) => {
+  console.error(error);
+  const isBadRequest = error.name === "ZodError" || /already registered|UNIQUE constraint/i.test(error.message || "");
+  res.status(isBadRequest ? 400 : 500).json({ error: error.name === "ZodError" ? "Invalid request" : isBadRequest ? error.message : "Unable to complete request" });
+});
+
+if (process.env.NODE_ENV !== "test") {
+  app.listen(process.env.PORT || 4000, () => console.log(`API listening on http://localhost:${process.env.PORT || 4000}`));
+}
+
+export { app, getAuthContext, serializeMe };

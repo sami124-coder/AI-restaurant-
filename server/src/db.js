@@ -11,7 +11,10 @@ db.pragma("foreign_keys = ON");
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS owners (id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS organizations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'CNY', timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai', language TEXT NOT NULL DEFAULT 'ar', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS restaurants (id INTEGER PRIMARY KEY, name TEXT NOT NULL, owner_id INTEGER NOT NULL REFERENCES owners(id));
+CREATE TABLE IF NOT EXISTS branches (id INTEGER PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id), restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), name TEXT NOT NULL, code TEXT NOT NULL, city TEXT NOT NULL, address TEXT, phone TEXT, pos_system TEXT, operating_day_start TEXT NOT NULL DEFAULT '10:00', operating_day_end TEXT NOT NULL DEFAULT '02:00', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(organization_id,code));
+CREATE TABLE IF NOT EXISTS organization_users (id INTEGER PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id), owner_id INTEGER NOT NULL REFERENCES owners(id), role TEXT NOT NULL CHECK(role IN ('owner','branch_manager','viewer')), branch_id INTEGER REFERENCES branches(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(organization_id,owner_id));
 CREATE TABLE IF NOT EXISTS menu_items (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), name TEXT NOT NULL, price REAL NOT NULL, cost REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE IF NOT EXISTS inventory (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), item_name TEXT NOT NULL, quantity REAL NOT NULL, threshold REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), items TEXT NOT NULL, total_price REAL NOT NULL, cost REAL NOT NULL, created_at TEXT NOT NULL);
@@ -25,13 +28,50 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (id INTEGER PRIMARY KEY, restaura
 CREATE TABLE IF NOT EXISTS knowledge_chunks (id INTEGER PRIMARY KEY, restaurant_id INTEGER NOT NULL REFERENCES restaurants(id), document_id INTEGER NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE, chunk_index INTEGER NOT NULL, content TEXT NOT NULL);
 `);
 
+function ensureColumn(table, column, definition) {
+  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((row) => row.name === column);
+  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+ensureColumn("owners", "name", "TEXT");
+ensureColumn("restaurants", "organization_id", "INTEGER REFERENCES organizations(id)");
+ensureColumn("restaurants", "currency", "TEXT NOT NULL DEFAULT 'CNY'");
+ensureColumn("restaurants", "timezone", "TEXT NOT NULL DEFAULT 'Asia/Shanghai'");
+ensureColumn("restaurants", "language", "TEXT NOT NULL DEFAULT 'ar'");
+ensureColumn("restaurants", "business_type", "TEXT NOT NULL DEFAULT 'yemeni'");
+
+function ensureAccessRecords() {
+  const restaurants = db.prepare("SELECT id,name,owner_id,organization_id FROM restaurants").all();
+  const insertOrg = db.prepare("INSERT INTO organizations(name,currency,timezone,language) VALUES (?,?,?,?)");
+  const updateRestaurant = db.prepare("UPDATE restaurants SET organization_id=?,currency='CNY',timezone='Asia/Shanghai',language='ar',business_type='yemeni' WHERE id=?");
+  const insertBranch = db.prepare("INSERT OR IGNORE INTO branches(organization_id,restaurant_id,name,code,city,operating_day_start,operating_day_end) VALUES (?,?,?,?,?,?,?)");
+  const insertMembership = db.prepare("INSERT OR IGNORE INTO organization_users(organization_id,owner_id,role,branch_id) VALUES (?,?,?,?)");
+
+  restaurants.forEach((restaurant) => {
+    let organizationId = restaurant.organization_id;
+    if (!organizationId) {
+      organizationId = Number(insertOrg.run(`${restaurant.name} Organization`, "CNY", "Asia/Shanghai", "ar").lastInsertRowid);
+      updateRestaurant.run(organizationId, restaurant.id);
+    }
+    let branch = db.prepare("SELECT id FROM branches WHERE restaurant_id=? ORDER BY id LIMIT 1").get(restaurant.id);
+    if (!branch) {
+      insertBranch.run(organizationId, restaurant.id, `${restaurant.name} - Guangzhou`, "GZ-01", "Guangzhou", "10:00", "02:00");
+      branch = db.prepare("SELECT id FROM branches WHERE restaurant_id=? ORDER BY id LIMIT 1").get(restaurant.id);
+    }
+    insertMembership.run(organizationId, restaurant.owner_id, "owner", null);
+  });
+}
+
 function seed() {
   if (db.prepare("SELECT count(*) n FROM owners").get().n) return;
-  const owner = db.prepare("INSERT INTO owners(email,password_hash) VALUES (?,?)").run("owner@harbor.test", bcrypt.hashSync("demo1234", 10)).lastInsertRowid;
-  const restaurant = db.prepare("INSERT INTO restaurants(name,owner_id) VALUES (?,?)").run("Harbor & Hearth", owner).lastInsertRowid;
+  const owner = db.prepare("INSERT INTO owners(email,password_hash,name) VALUES (?,?,?)").run("owner@harbor.test", bcrypt.hashSync("demo1234", 10), "Demo Owner").lastInsertRowid;
+  const organization = db.prepare("INSERT INTO organizations(name,currency,timezone,language) VALUES (?,?,?,?)").run("Sana'a Hospitality", "CNY", "Asia/Shanghai", "ar").lastInsertRowid;
+  const restaurant = db.prepare("INSERT INTO restaurants(name,owner_id,organization_id,currency,timezone,language,business_type) VALUES (?,?,?,?,?,?,?)").run("مطعم صنعاء", owner, organization, "CNY", "Asia/Shanghai", "ar", "yemeni").lastInsertRowid;
+  const branch = db.prepare("INSERT INTO branches(organization_id,restaurant_id,name,code,city,operating_day_start,operating_day_end) VALUES (?,?,?,?,?,?,?)").run(organization, restaurant, "مطعم صنعاء - فرع قوانغتشو", "GZ-01", "Guangzhou", "10:00", "02:00").lastInsertRowid;
+  db.prepare("INSERT INTO organization_users(organization_id,owner_id,role,branch_id) VALUES (?,?,?,?)").run(organization, owner, "owner", null);
   const menu = [
-    ["Truffle Burger", 18, 7.2], ["Grilled Salmon", 26, 13.5], ["Garden Bowl", 14, 5.1],
-    ["Margherita Pizza", 16, 4.8], ["Tiramisu", 9, 3.1], ["Lobster Pasta", 31, 22.5]
+    ["مندي دجاج", 48, 24], ["مندي لحم", 88, 58], ["حنيذ", 78, 46],
+    ["سلتة", 38, 15], ["فحسة", 42, 17], ["Lobster Pasta", 31, 22.5]
   ];
   const insertMenu = db.prepare("INSERT INTO menu_items(restaurant_id,name,price,cost) VALUES (?,?,?,?)");
   menu.forEach((m) => insertMenu.run(restaurant, ...m));
@@ -49,3 +89,4 @@ function seed() {
   }
 }
 seed();
+ensureAccessRecords();

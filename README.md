@@ -35,6 +35,16 @@ Important: without `OPENAI_API_KEY`, the public app uses deterministic demo mode
 - Tool implementations are pure restaurant-scoped functions in `server/src/tools.js`
 - Every database query is constrained by the authenticated owner's `restaurant_id`
 
+## MVP planning docs
+
+Before adding the next database or UI feature, start with these docs:
+
+- [`docs/repository-audit.md`](docs/repository-audit.md): current implementation audit and gaps.
+- [`docs/mvp-scope.md`](docs/mvp-scope.md): frozen MVP scope for a Yemeni restaurant in China.
+- [`docs/acceptance-tests.md`](docs/acceptance-tests.md): task-by-task acceptance tests and readiness format.
+
+The next implementation task is Task 1 only: account registration, organization, restaurant, branches, roles, and user management.
+
 ## API
 
 - `POST /api/auth/login`
