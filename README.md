@@ -1,4 +1,4 @@
-# Restaurant Decision AI
+# Restaurant Decision AI — Built-in Prefinal Edition
 
 The AI decision layer for restaurant owners. Ask for a daily summary, find menu profit leaks, and catch inventory risks in seconds. The assistant uses restaurant-scoped tools, never invents business figures, and requires owner approval before operational changes.
 
@@ -12,9 +12,9 @@ npm run dev
 
 Open `http://localhost:5173`, choose **Create restaurant**, and create your own owner account, organization, restaurant, and first branch.
 
-The app uses its built-in restaurant assistant mode. It answers supported restaurant operations questions with deterministic business logic and real restaurant-scoped tools. No OpenAI API key or external model is required.
+The app uses its built-in prefinal restaurant assistant mode. It answers supported restaurant operations questions with deterministic business logic, restaurant-scoped tools, and data-readiness checks. No OpenAI API key or external model is required.
 
-Important: the built-in assistant is rules-based. It can analyze connected restaurant data for supported questions, but it is not an open-ended language model.
+Important: the built-in assistant is rules-based. It can analyze connected restaurant data for supported questions, explain missing data, and avoid fake “healthy” conclusions, but it is not an open-ended language model.
 
 ## Architecture
 
@@ -123,7 +123,7 @@ The repository includes a Render Blueprint that builds the React frontend, serve
 
 [Deploy to Render](https://render.com/deploy?repo=https://github.com/sami124-coder/AI-restaurant-)
 
-During setup, no AI provider key is needed. `/api/health` reports `ai: "built-in"`.
+During setup, no AI provider key is needed. `/api/health` reports `ai: "built-in"` and `version: "prefinal"`.
 
 ### Railway alternative
 

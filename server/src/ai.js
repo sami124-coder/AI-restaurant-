@@ -1,4 +1,5 @@
 import { executeTool } from "./tools.js";
+import { dataConnectionStatus } from "./dataImport.js";
 
 export const SYSTEM_PROMPT = `You are Restaurant Decision AI, an expert AI restaurant manager assistant. Your job is to answer like ChatGPT, but specialized for restaurants.
 
@@ -48,6 +49,49 @@ Safety rules:
 const money = (value) => new Intl.NumberFormat(undefined, { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(Number(value) || 0);
 const isArabic = (text) => /[\u0600-\u06FF]/.test(text);
 const normalizeScope = (scope) => typeof scope === "object" ? scope : { restaurantId: scope };
+
+function getDataReadiness(scope) {
+  const context = normalizeScope(scope);
+  try {
+    const status = dataConnectionStatus(context.restaurantId, context.branchId);
+    return {
+      ...status,
+      hasOrders: status.orders > 0,
+      hasMenu: status.menu_items > 0,
+      hasInventory: status.inventory > 0,
+      hasStaff: status.staff_shifts > 0,
+      hasAnyData: Object.values(status).some((value) => Number(value) > 0)
+    };
+  } catch {
+    return {
+      orders: 0,
+      refunds: 0,
+      menu_items: 0,
+      inventory: 0,
+      staff_shifts: 0,
+      hasOrders: false,
+      hasMenu: false,
+      hasInventory: false,
+      hasStaff: false,
+      hasAnyData: false
+    };
+  }
+}
+
+function formatConnectionHint(readiness) {
+  if (readiness.hasOrders && readiness.hasMenu && readiness.hasInventory) return "";
+  const missing = [
+    !readiness.hasOrders && "orders / sales",
+    !readiness.hasMenu && "menu prices and item costs",
+    !readiness.hasInventory && "inventory quantities and reorder thresholds",
+    !readiness.hasStaff && "staff shifts and hourly labor"
+  ].filter(Boolean);
+  return `\n\nData note: This answer is limited because ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not connected yet. Import those files from Connect real data for a stronger decision.`;
+}
+
+function formatSocialAcknowledgement() {
+  return "Good — I’m ready for the next decision.\n\nYou can ask me to summarize today, find profit leaks, check stock risks, review refunds, or suggest staffing.";
+}
 
 function formatCapabilities() {
   return "Yes. I can speak Arabic and English.\n\nYou can ask in Arabic, for example:\n\n• كيف أداء المطعم اليوم؟\n• ما أكثر طبق يضر الربح؟\n• هل أحتاج موظفين إضافيين الليلة؟\n\nI will answer in the same language you use, and I will use restaurant data when the question needs numbers.";
@@ -203,6 +247,152 @@ function formatAttention(restaurantId) {
   return `What needs attention\n\n1. Inventory: ${inventory.low_stock_count} item${inventory.low_stock_count === 1 ? "" : "s"} below threshold${inventory.low_stock_count ? ` — ${inventory.items.filter((item) => item.status === "low").map((item) => item.item_name).join(", ")}` : ""}.\n2. Menu profit: ${topRisk ? `${topRisk.name} has the weakest margin at ${topRisk.margin_percent}%` : "No item is currently below the performance threshold"}.\n3. Today: ${money(daily.revenue)} sales from ${daily.orders} orders, with ${money(daily.profit)} estimated profit.\n\nPriority: ${inventory.low_stock_count ? "Reorder low-stock ingredients before the next service." : topRisk ? `Review the cost and price of ${topRisk.name}.` : "No urgent exception is visible; protect today’s service quality."}`;
 }
 
+function formatGeneralRestaurantHelpPrefinal(scope) {
+  const readiness = getDataReadiness(scope);
+  return `Direct answer:
+I can help, but I need one clearer restaurant question or goal to give a strong manager answer.
+
+Good questions to ask — choose one:
+1. “Give me today’s business summary.”
+2. “Which dish is hurting profit?”
+3. “What inventory needs attention?”
+4. “Do I need more staff tonight?”
+5. “How do I connect my real POS data?”
+
+What I can use right now:
+- Orders: ${readiness.orders}
+- Menu items: ${readiness.menu_items}
+- Inventory rows: ${readiness.inventory}
+- Staff shifts: ${readiness.staff_shifts}
+
+Example:
+Ask: “Give me today’s business summary and tell me the first action I should take.”${formatConnectionHint(readiness)}`;
+}
+
+function formatDailyPrefinal(data) {
+  if (!data.orders) return `Direct answer:
+I do not have recorded orders for ${data.date}, so I cannot judge today’s performance yet.
+
+What is missing:
+- POS order export for this operating day
+- Item-level sales
+- Order cost or food-cost data
+
+Next action:
+Import today’s orders from Connect real data, then ask for the daily summary again.`;
+  return `Today’s decision brief
+
+Sales: ${money(data.revenue)}
+Orders: ${data.orders}
+Estimated profit: ${money(data.profit)}
+Margin: ${data.margin_percent}%
+Peak hour: ${data.peak_hour || "Not available"}
+
+Decision:
+Protect service quality during ${data.peak_hour || "the next busy period"} and check low-stock ingredients before the next shift.
+
+Next action:
+Ask “What needs attention?” to compare sales, menu profit, and stock risks together.`;
+}
+
+function formatProfitPrefinal(data) {
+  if (!data.orders) return `Direct answer:
+I cannot calculate a useful ${data.range} profit summary because there are no recorded orders in that range.
+
+What is missing:
+- Orders for the selected range
+- Menu item costs
+- Refunds, discounts, commissions, and labor if you want true net profit
+
+Next action:
+Import POS orders and item costs first. Then I can calculate revenue, gross profit, margin, and the dishes causing profit leakage.`;
+  return `${data.range[0].toUpperCase()}${data.range.slice(1)} profit brief
+
+Revenue: ${money(data.revenue)}
+Recorded costs: ${money(data.cost)}
+Estimated gross profit: ${money(data.profit)}
+Gross margin: ${data.margin_percent}%
+Orders: ${data.orders}
+
+Important:
+This is gross operating analysis from connected order/menu data. Treat it as incomplete net profit if labor, refunds, discounts, delivery commissions, rent, or other costs are not imported.
+
+Next action:
+Review low-margin dishes first; small price or food-cost improvements usually move profit fastest.`;
+}
+
+function formatInventoryPrefinal(data) {
+  const low = data.items.filter((item) => item.status === "low");
+  if (!data.items.length) return `Direct answer:
+I cannot check stock risk because no inventory rows are connected yet.
+
+What is missing:
+- Ingredient or item name
+- Current quantity
+- Reorder threshold
+
+Next action:
+Import an inventory CSV from Connect real data, then ask “What inventory needs attention?”`;
+  if (!low.length) return "Inventory is healthy based on the connected inventory rows. No items are below their reorder threshold.\n\nRecommendation: Keep the current ordering cadence and recheck before the next peak service.";
+  return `Inventory needs attention\n\n${low.map((item) => `• ${item.item_name}: ${item.quantity} remaining (reorder at ${item.threshold})`).join("\n")}\n\nRecommendation: Reorder ${low.map((item) => item.item_name).join(" and ")} before the next busy service.`;
+}
+
+function formatTopDishesPrefinal(items) {
+  if (!items.length) return "Direct answer:\nI cannot rank dishes yet because item-level order data is missing.\n\nWhat is missing:\n- Menu item names\n- Quantity sold\n- Revenue and cost per item\n\nNext action:\nImport orders and menu costs, then ask “Which dishes are selling best?”";
+  return `Top dishes this month\n\n${items.slice(0, 5).map((item, index) => `${index + 1}. ${item.name} — ${item.units} sold, ${money(item.revenue)} revenue, ${item.margin_percent}% margin`).join("\n")}\n\nRecommendation: Keep the leading dishes prominent and compare their margins before running promotions.`;
+}
+
+function formatStaffingPrefinal(data) {
+  if (!data.expected_orders) return `Direct answer:
+I cannot recommend staffing confidently because there is no demand signal for the selected period.
+
+What is missing:
+- Historical orders by hour
+- Tonight’s reservations or forecast
+- Current staff schedule
+
+Next action:
+Import recent orders and staff shifts, then ask “Do we need more staff tonight?”`;
+  return `Staffing outlook\n\nExpected orders: ${data.expected_orders}\nDecision: ${data.recommendation}\nBasis: ${data.basis}.\n\nRecommendation: Confirm availability with the shift lead before changing the rota.`;
+}
+
+function formatRefundsPrefinal(data, scope) {
+  const readiness = getDataReadiness(scope);
+  if (!data.refunds) return `No refunds are recorded for this ${data.range}.
+
+Recommendation:
+Verify that POS refund imports are current before concluding there were truly no refunds.${formatConnectionHint(readiness)}`;
+  return `Refund review\n\nRefunds: ${data.refunds}\nRefunded value: ${money(data.refunded_amount)}\nTop reasons: ${data.top_reasons.map((item) => `${item.reason} (${item.count})`).join(", ") || "Not specified"}\n\nRecommendation: Investigate the most common reason first and compare it with the affected menu items or shifts.`;
+}
+
+function formatLowPerformancePrefinal(items) {
+  if (!items.length) return "Direct answer:\nI do not see a low-performance dish from the connected item data.\n\nImportant:\nThis does not prove every dish is profitable. It only means no item crossed the current low-performance threshold in the available data.\n\nNext action:\nKeep monitoring contribution margin, unit sales, refunds, and ingredient cost each week.";
+  return `Menu profit risks\n\n${items.slice(0, 4).map((item, index) => `${index + 1}. ${item.name}: ${item.margin_percent}% margin, ${item.units} sold, ${money(item.profit)} contribution`).join("\n")}\n\nRecommendation: Review ${items[0].name} first. Check its portion cost and price before considering removal.`;
+}
+
+function formatAttentionPrefinal(scope) {
+  const readiness = getDataReadiness(scope);
+  const daily = executeTool("get_daily_sales", { date: new Date().toISOString().slice(0, 10) }, scope);
+  const inventory = executeTool("get_inventory_status", {}, scope);
+  const weak = executeTool("get_low_performance_items", {}, scope);
+  const topRisk = weak[0];
+  const lowNames = inventory.items.filter((item) => item.status === "low").map((item) => item.item_name);
+  const priorities = [];
+  if (!readiness.hasOrders) priorities.push("Import today’s POS orders before making a sales or staffing decision.");
+  if (inventory.low_stock_count) priorities.push(`Reorder low-stock ingredients first: ${lowNames.join(", ")}.`);
+  if (topRisk) priorities.push(`Review ${topRisk.name}; it has the weakest visible margin at ${topRisk.margin_percent}%.`);
+  if (!priorities.length) priorities.push("No urgent exception is visible in connected data; protect service quality and keep monitoring.");
+
+  return `What needs attention
+
+1. Inventory: ${readiness.hasInventory ? `${inventory.low_stock_count} item${inventory.low_stock_count === 1 ? "" : "s"} below threshold${lowNames.length ? ` — ${lowNames.join(", ")}` : ""}` : "inventory data is not connected"}.
+2. Menu profit: ${readiness.hasMenu && readiness.hasOrders ? topRisk ? `${topRisk.name} has the weakest margin at ${topRisk.margin_percent}%` : "no item is currently below the performance threshold" : "menu and order data are not complete enough for a strong conclusion"}.
+3. Today: ${readiness.hasOrders ? `${money(daily.revenue)} sales from ${daily.orders} orders, with ${money(daily.profit)} estimated gross profit` : "no orders connected for this operating day"}.
+
+Priority:
+${priorities[0]}${formatConnectionHint(readiness)}`;
+}
+
 function demoReplyArabic(text, restaurantId) {
   const q = text.trim();
   if (/(أوقف|عطّل|احذف|فعّل).*(طبق|عنصر)|أنشئ.*تقرير/.test(q)) return "هذا الإجراء سيغيّر بيانات المطعم. يرجى تأكيد الإجراء المحدد بوضوح قبل التنفيذ.";
@@ -268,11 +458,12 @@ export function demoReply(text, restaurantId) {
   if (/^(hi|hello|hey|good (morning|afternoon|evening))[!. ]*$/.test(q)) {
     return "Hello — I’m ready. Ask me about today’s sales, weekly profit, top dishes, inventory, or staffing.";
   }
-  if (/^(thanks|thank you|great|okay|ok)[!. ]*$/.test(q)) return "You’re welcome. What decision should we look at next?";
+  if (/^(thanks|thank you)[!. ]*$/.test(q)) return "You are welcome. I am ready for the next restaurant decision.";
+  if (/^(good|very good|nice|great|perfect|excellent|awesome|amazing|okay|ok|cool|done|got it|understood|sounds good)[!. ]*$/.test(q)) return formatSocialAcknowledgement();
   if (/(speak|answer|reply|talk|understand).*(arabic|english|language)|arabic|العربية|عربي/.test(q)) return formatCapabilities();
   if (/(real|actual|live|my|own|demo|sample|seed).*(data|restaurant|pos|sales)|data.*(real|actual|live|mine|own|demo|sample|seed)|connect.*data|upload.*data|need.*data|i need.*real data|is it.*real data|is this.*real|is this.*demo/.test(q)) return formatRealDataStatus();
   if (/(what can you do|help|capabilities)/.test(q)) return "I can help with five decisions:\n\n• Summarize today’s sales and profit\n• Find top and weak menu items\n• Flag low inventory\n• Suggest staffing from demand\n• Create an operating report after your confirmation\n\nTry: “What needs my attention today?”";
-  if (/(what needs|attention|priority|priorities|worry|problem)/.test(q) && !/(inventory|stock|restock|ingredient|run out)/.test(q)) return formatAttention(restaurantId);
+  if (/(what needs|attention|priority|priorities|worry|problem)/.test(q) && !/(inventory|stock|restock|ingredient|run out)/.test(q)) return formatAttentionPrefinal(restaurantId);
   let name = "get_daily_sales", args = { date: new Date().toISOString().slice(0, 10) };
   if (/(refund|refunded|return|chargeback)/.test(q)) { name = "get_refund_summary"; args = { range: q.includes("month") ? "month" : q.includes("today") ? "today" : "week" }; }
   else if (/(inventory|stock|restock|ingredient|run out)/.test(q)) { name = "get_inventory_status"; args = {}; }
@@ -280,15 +471,15 @@ export function demoReply(text, restaurantId) {
   else if (/(top|best|popular|selling|dish|menu item)/.test(q)) { name = "get_top_dishes"; args = {}; }
   else if (/(profit|margin|revenue|cost|week|month)/.test(q)) { name = "get_profit_summary"; args = { range: q.includes("month") ? "month" : q.includes("today") ? "today" : "week" }; }
   else if (/(staff|server|cook|shift|busy|tonight)/.test(q)) { name = "suggest_staffing"; args = { level: q.includes("busy") ? "busy" : "auto", date_time: new Date().toISOString() }; }
-  else if (!/(today|sales|orders|doing|performance|summary)/.test(q)) return formatGeneralRestaurantHelp();
+  else if (!/(today|sales|orders|doing|performance|summary)/.test(q)) return formatGeneralRestaurantHelpPrefinal(restaurantId);
   const data = executeTool(name, args, restaurantId);
-  if (name === "get_daily_sales") return formatDaily(data);
-  if (name === "get_profit_summary") return formatProfit(data);
-  if (name === "get_inventory_status") return formatInventory(data);
-  if (name === "get_refund_summary") return formatRefunds(data);
-  if (name === "get_top_dishes") return formatTopDishes(data);
-  if (name === "get_low_performance_items") return formatLowPerformance(data);
-  return formatStaffing(data);
+  if (name === "get_daily_sales") return formatDailyPrefinal(data);
+  if (name === "get_profit_summary") return formatProfitPrefinal(data);
+  if (name === "get_inventory_status") return formatInventoryPrefinal(data);
+  if (name === "get_refund_summary") return formatRefundsPrefinal(data, restaurantId);
+  if (name === "get_top_dishes") return formatTopDishesPrefinal(data);
+  if (name === "get_low_performance_items") return formatLowPerformancePrefinal(data);
+  return formatStaffingPrefinal(data);
 }
 
 export function inferTools(text) {
